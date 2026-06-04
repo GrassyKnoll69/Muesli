@@ -34,11 +34,19 @@ def _default_transcribe(path, settings):
     return transcribe_wav(path, settings)
 
 
-def _default_enhance(template_prompt, rough_notes, transcript):
-    from muesli_engine.config import Settings as S
-    from muesli_engine.enhance.llm import get_backend
+def _make_default_enhance(settings: Settings):
+    """Build the default enhance fn bound to the active settings.
 
-    return get_backend(S()).enhance(template_prompt, rough_notes, transcript)
+    Closing over ``settings`` (instead of constructing a fresh ``Settings()``)
+    ensures the configured model and the optional cloud backend are honored.
+    """
+
+    def _enhance(template_prompt, rough_notes, transcript):
+        from muesli_engine.enhance.llm import get_backend
+
+        return get_backend(settings).enhance(template_prompt, rough_notes, transcript)
+
+    return _enhance
 
 
 def _default_recorder_factory(path):
@@ -51,13 +59,15 @@ def create_app(
     db_path: str | None = None,
     settings: Settings | None = None,
     transcribe_fn=_default_transcribe,
-    enhance_fn=_default_enhance,
+    enhance_fn=None,
     recorder_factory=_default_recorder_factory,
 ) -> FastAPI:
     from muesli_engine.api.routes import build_router
     from muesli_engine import config
 
     settings = settings or Settings()
+    if enhance_fn is None:
+        enhance_fn = _make_default_enhance(settings)
     if db_path is None:
         ensure_dirs()
         db_path = str(config.DB_PATH)

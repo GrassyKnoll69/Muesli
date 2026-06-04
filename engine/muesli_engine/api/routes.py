@@ -59,11 +59,14 @@ def build_router(ctx) -> APIRouter:
     @router.post("/meetings/{meeting_id}/enhance")
     def enhance(meeting_id: int, req: EnhanceRequest):
         meeting = ctx.db.get_meeting(meeting_id)
-        template_id = req.template_id or meeting.template_id
-        if template_id:
+        template_id = req.template_id if req.template_id is not None else meeting.template_id
+        if template_id is not None:
             template_prompt = ctx.db.get_template(template_id).prompt
         else:
-            template_prompt = ctx.db.list_templates()[0].prompt
+            templates = ctx.db.list_templates()
+            if not templates:
+                raise HTTPException(status_code=422, detail="no template available to enhance with")
+            template_prompt = templates[0].prompt
         enhanced = ctx.enhance_fn(template_prompt, meeting.rough_notes, meeting.transcript)
         ctx.db.set_enhanced(meeting_id, enhanced)
         return ctx.db.get_meeting(meeting_id)
