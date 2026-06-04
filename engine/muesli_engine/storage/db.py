@@ -127,9 +127,12 @@ class Database:
         self.conn.commit()
 
     def _update_status(self, meeting_id: int, new_status: str) -> None:
-        current = self.conn.execute(
+        row = self.conn.execute(
             "SELECT status FROM meetings WHERE id=?", (meeting_id,)
-        ).fetchone()[0]
+        ).fetchone()
+        if row is None:
+            return
+        current = row[0]
         if _STATUS_ORDER.index(new_status) > _STATUS_ORDER.index(current):
             self.conn.execute(
                 "UPDATE meetings SET status=? WHERE id=?", (new_status, meeting_id)

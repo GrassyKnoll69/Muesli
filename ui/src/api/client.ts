@@ -6,6 +6,7 @@ export interface Meeting {
   transcript: string;
   enhanced_notes: string;
   template_id: number | null;
+  audio_path: string | null;
   status: string;
 }
 export interface Template { id: number; name: string; prompt: string; }
@@ -31,7 +32,7 @@ export const api = {
     fetch(`/meetings/${id}/notes`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rough_notes }),
-    }),
+    }).then(j<{ ok: boolean }>),
   transcribe: (id: number) =>
     fetch(`/meetings/${id}/transcribe`, { method: "POST" }).then(j<Meeting>),
   enhance: (id: number, template_id: number | null) =>
