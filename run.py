@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import sys
 import threading
+from pathlib import Path
 
 import uvicorn
 import webview
 
-from muesli_engine.app import create_app
+# Make the engine package importable when launching from the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "engine"))
+
+from muesli_engine.app import create_app  # noqa: E402
 
 PORT = 8731
 
