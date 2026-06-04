@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+ui/dist/
+
+# Muesli runtime data
+.muesli/
+*.wav
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
