@@ -81,4 +81,12 @@ def create_app(
     ctx = EngineContext(db, settings, transcribe_fn, enhance_fn, recorder_factory)
     app = FastAPI(title="Muesli Engine")
     app.include_router(build_router(ctx))
+
+    from pathlib import Path
+    from fastapi.staticfiles import StaticFiles
+
+    ui_dist = Path(__file__).resolve().parents[2] / "ui" / "dist"
+    if ui_dist.exists():
+        app.mount("/", StaticFiles(directory=str(ui_dist), html=True), name="ui")
+
     return app
