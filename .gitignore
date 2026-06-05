@@ -18,3 +18,7 @@ ui/dist/
 .DS_Store
 .idea/
 .vscode/
+
+# Local agent context (machine-specific paths, not for public repo)
+AGENTS.md
+CLAUDE.md
