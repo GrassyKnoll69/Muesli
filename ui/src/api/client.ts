@@ -20,11 +20,49 @@ async function readError(r: Response): Promise<string> {
   const text = await r.text();
   if (!text) return `${r.status} ${r.statusText}`.trim();
   try {
-    const parsed = JSON.parse(text);
-    return parsed.detail || parsed.message || text;
+    const parsed: unknown = JSON.parse(text);
+    return errorMessage(parsed, text);
   } catch {
     return text;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringifyOrText(value: unknown, text: string): string {
+  try {
+    return JSON.stringify(value) ?? text;
+  } catch {
+    return text;
+  }
+}
+
+function arrayMessages(value: unknown[]): string | null {
+  const messages = value.flatMap((item) => {
+    if (typeof item === "string" && item.trim()) return [item];
+    if (isRecord(item) && typeof item.msg === "string" && item.msg.trim()) {
+      return [item.msg];
+    }
+    return [];
+  });
+  return messages.length > 0 ? messages.join("; ") : null;
+}
+
+function errorMessage(value: unknown, text: string): string {
+  if (isRecord(value)) {
+    if (typeof value.detail === "string") return value.detail;
+    if (typeof value.message === "string") return value.message;
+    if (Array.isArray(value.detail)) {
+      return arrayMessages(value.detail) ?? stringifyOrText(value.detail, text);
+    }
+    return stringifyOrText(value, text);
+  }
+
+  if (Array.isArray(value)) return stringifyOrText(value, text);
+  if (typeof value === "string") return value;
+  return text;
 }
 
 export interface Settings {
