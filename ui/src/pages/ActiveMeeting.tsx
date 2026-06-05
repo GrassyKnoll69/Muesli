@@ -14,8 +14,14 @@ export default function ActiveMeeting() {
   const [notes, setNotes] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState("");
+  const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const nav = useNavigate();
   const timer = useRef<number | undefined>(undefined);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const saveRequest = useRef(0);
+  const startingRef = useRef(false);
+  const stoppingRef = useRef(false);
 
   useEffect(() => {
     api
@@ -29,24 +35,40 @@ export default function ActiveMeeting() {
   }, []);
 
   async function start() {
+    if (startingRef.current) return;
+    startingRef.current = true;
+    setStarting(true);
     setError("");
     try {
       const meeting = await api.start(title || "Untitled meeting", templateId);
       setMeetingId(meeting.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start recording.");
+    } finally {
+      startingRef.current = false;
+      setStarting(false);
     }
   }
 
-  function saveNotes(meeting: number, nextNotes: string) {
+  function saveNotes(meeting: number, nextNotes: string): Promise<void> {
+    const requestId = ++saveRequest.current;
     setSaveState("saving");
-    api
-      .saveNotes(meeting, nextNotes)
-      .then(() => setSaveState("saved"))
-      .catch((err) => {
-        setSaveState("error");
-        setError(err instanceof Error ? err.message : "Could not save notes.");
-      });
+    const run = async () => {
+      try {
+        await api.saveNotes(meeting, nextNotes);
+        if (saveRequest.current === requestId) {
+          setSaveState("saved");
+        }
+      } catch (err) {
+        if (saveRequest.current === requestId) {
+          setSaveState("error");
+          setError(err instanceof Error ? err.message : "Could not save notes.");
+        }
+      }
+    };
+    const queuedSave = saveQueue.current.then(run, run);
+    saveQueue.current = queuedSave.catch(() => undefined);
+    return queuedSave;
   }
 
   function onNotes(v: string) {
@@ -58,15 +80,34 @@ export default function ActiveMeeting() {
   }
 
   async function stop() {
-    if (!meetingId) return;
+    if (!meetingId || stoppingRef.current) return;
+    stoppingRef.current = true;
+    setStopping(true);
     setError("");
     window.clearTimeout(timer.current);
     try {
+      await saveQueue.current;
+      const requestId = ++saveRequest.current;
+      setSaveState("saving");
       await api.saveNotes(meetingId, notes);
+      if (saveRequest.current === requestId) {
+        setSaveState("saved");
+      }
+    } catch (err) {
+      setSaveState("error");
+      setError(err instanceof Error ? err.message : "Could not save notes.");
+      stoppingRef.current = false;
+      setStopping(false);
+      return;
+    }
+
+    try {
       await api.stop(meetingId);
       nav(`/meetings/${meetingId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not stop recording.");
+      stoppingRef.current = false;
+      setStopping(false);
     }
   }
 
@@ -94,6 +135,7 @@ export default function ActiveMeeting() {
                 className="input"
                 placeholder="Untitled meeting"
                 value={title}
+                disabled={starting}
                 onChange={(e) => setTitle(e.target.value)}
               />
             </div>
@@ -103,6 +145,7 @@ export default function ActiveMeeting() {
                 id="meeting-template"
                 className="select"
                 value={templateId ?? ""}
+                disabled={starting}
                 onChange={(e) =>
                   setTemplateId(e.target.value ? Number(e.target.value) : null)
                 }
@@ -116,8 +159,8 @@ export default function ActiveMeeting() {
               </select>
             </div>
             <div>
-              <button className="button-primary" onClick={start}>
-                Start recording
+              <button className="button-primary" onClick={start} disabled={starting}>
+                {starting ? "Starting..." : "Start recording"}
               </button>
             </div>
           </div>
@@ -145,7 +188,7 @@ export default function ActiveMeeting() {
             Keep rough notes here. Muesli records in the background.
           </p>
         </div>
-        <div className="cluster">
+        <div className="cluster" role="status" aria-live="polite">
           <StatusChip label="Recording" tone="recording" />
           <StatusChip
             label={saveLabel}
@@ -164,13 +207,15 @@ export default function ActiveMeeting() {
         <ErrorBanner message={error} />
         <textarea
           className="textarea"
+          aria-label="Rough meeting notes"
           value={notes}
+          disabled={stopping}
           onChange={(e) => onNotes(e.target.value)}
           placeholder="Jot rough notes..."
         />
         <div className="cluster">
-          <button className="button-danger" onClick={stop}>
-            Stop recording
+          <button className="button-danger" onClick={stop} disabled={stopping}>
+            {stopping ? "Stopping..." : "Stop recording"}
           </button>
         </div>
       </div>
