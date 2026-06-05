@@ -29,8 +29,8 @@ body {
 }
 
 a {
-  color: inherit;
-  text-decoration: none;
+  color: var(--accent-strong);
+  text-decoration: underline;
 }
 
 button,
@@ -73,12 +73,14 @@ button:disabled {
   background: var(--accent);
   border-color: var(--accent);
   color: white;
+  text-decoration: none;
 }
 
 .button-danger {
   background: var(--danger);
   border-color: var(--danger);
   color: white;
+  text-decoration: none;
 }
 
 .app-shell {
@@ -119,6 +121,7 @@ button:disabled {
   border-radius: 6px;
   color: var(--muted);
   padding: 9px 10px;
+  text-decoration: none;
 }
 
 .nav-link.active {
@@ -302,10 +305,12 @@ button:disabled {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
+  color: inherit;
   display: grid;
   gap: 8px;
   grid-template-columns: 1fr auto;
   padding: 14px;
+  text-decoration: none;
 }
 
 .pre {
