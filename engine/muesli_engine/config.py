@@ -18,7 +18,8 @@ class Settings(BaseModel):
     ollama_host: str = "http://localhost:11434"
     enhancement_backend: str = "ollama"     # "ollama" | "cloud"
     cloud_provider: str | None = None       # "openai" | "anthropic"
-    cloud_api_key: str | None = None
+    cloud_model: str | None = None          # resolved to a provider default when unset
+    cloud_api_key: str | None = None        # test-injection seam only; never persisted
 
 
 def ensure_dirs() -> None:
