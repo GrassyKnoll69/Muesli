@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import EmptyState from "../components/EmptyState";
 import ErrorBanner from "../components/ErrorBanner";
@@ -15,18 +15,27 @@ function formatDate(value: string) {
 export default function Library() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [q, setQ] = useState("");
+  const [activeQuery, setActiveQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const latestRequestId = useRef(0);
 
   async function load(nextQuery = q) {
+    const requestId = latestRequestId.current + 1;
+    latestRequestId.current = requestId;
+    const query = nextQuery.trim();
     setLoading(true);
     setError("");
     try {
-      setMeetings(nextQuery.trim() ? await api.searchMeetings(nextQuery.trim()) : await api.listMeetings());
+      const nextMeetings = query ? await api.searchMeetings(query) : await api.listMeetings();
+      if (requestId !== latestRequestId.current) return;
+      setMeetings(nextMeetings);
+      setActiveQuery(query);
     } catch (err) {
+      if (requestId !== latestRequestId.current) return;
       setError(err instanceof Error ? err.message : "Could not load meetings.");
     } finally {
-      setLoading(false);
+      if (requestId === latestRequestId.current) setLoading(false);
     }
   }
 
@@ -45,7 +54,14 @@ export default function Library() {
 
       <div className="stack">
         <form className="panel cluster" onSubmit={(e) => { e.preventDefault(); load(); }}>
-          <input className="input" placeholder="Search notes and transcripts" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input
+            aria-label="Search notes and transcripts"
+            className="input"
+            placeholder="Search notes and transcripts"
+            type="search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
           <button type="submit">Search</button>
           {q && <button type="button" onClick={() => { setQ(""); load(""); }}>Clear</button>}
         </form>
@@ -56,8 +72,8 @@ export default function Library() {
 
         {!loading && meetings.length === 0 && (
           <EmptyState
-            title={q.trim() ? "No meetings found" : "No meetings yet"}
-            description={q.trim() ? "Try a different search term." : "Start a recording to create your first meeting note."}
+            title={activeQuery ? "No meetings found" : "No meetings yet"}
+            description={activeQuery ? "Try a different search term." : "Start a recording to create your first meeting note."}
             action={<Link className="button-primary" to="/new">Record meeting</Link>}
           />
         )}
