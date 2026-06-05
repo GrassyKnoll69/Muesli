@@ -24,31 +24,31 @@ function hasText(value: string | null | undefined): boolean {
 export function deriveMeetingState(meeting: Meeting): MeetingDisplayState {
   const status = meeting.status.toLowerCase();
 
-  if (status.includes("record")) {
+  if (status === "recording") {
     return { key: "recording", label: "Recording", tone: "recording", nextAction: "Keep taking notes or stop recording." };
   }
 
-  if (status.includes("transcrib")) {
+  if (status === "transcribing") {
     return { key: "transcribing", label: "Transcribing", tone: "busy", nextAction: "Wait for transcription to finish." };
   }
 
-  if (status.includes("enhanc")) {
+  if (status === "enhancing") {
     return { key: "enhancing", label: "Enhancing", tone: "busy", nextAction: "Wait for note enhancement to finish." };
   }
 
-  if (status.includes("fail") || status.includes("error")) {
+  if (status === "failed" || status === "error") {
     return { key: "blocked", label: "Failed", tone: "danger", nextAction: "Review the error and retry the last action." };
   }
 
-  if (hasText(meeting.enhanced_notes)) {
+  if (status === "enhanced" || hasText(meeting.enhanced_notes)) {
     return { key: "complete", label: "Complete", tone: "success", nextAction: "Review enhanced notes." };
   }
 
-  if (hasText(meeting.transcript)) {
+  if (status === "transcribed" || hasText(meeting.transcript)) {
     return { key: "needs-enhancement", label: "Needs enhancement", tone: "warning", nextAction: "Enhance notes." };
   }
 
-  if (meeting.audio_path || status.includes("stop")) {
+  if (status === "recorded" || meeting.audio_path || status === "stopped") {
     return { key: "needs-transcription", label: "Needs transcription", tone: "warning", nextAction: "Transcribe audio." };
   }
 

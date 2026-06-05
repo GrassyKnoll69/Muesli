@@ -34,6 +34,18 @@ describe("deriveMeetingState", () => {
     expect(deriveMeetingState(meeting({ enhanced_notes: "# Notes" })).label).toBe("Complete");
   });
 
+  it("asks for transcription when the backend status says recorded", () => {
+    expect(deriveMeetingState(meeting({ status: "recorded" })).label).toBe("Needs transcription");
+  });
+
+  it("asks for enhancement when the backend status says transcribed", () => {
+    expect(deriveMeetingState(meeting({ status: "transcribed" })).label).toBe("Needs enhancement");
+  });
+
+  it("marks a meeting complete when the backend status says enhanced", () => {
+    expect(deriveMeetingState(meeting({ status: "enhanced" })).label).toBe("Complete");
+  });
+
   it("marks failed backend statuses as blocked", () => {
     expect(deriveMeetingState(meeting({ status: "failed" })).tone).toBe("danger");
   });
