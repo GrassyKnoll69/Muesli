@@ -9,7 +9,23 @@ export interface Meeting {
   audio_path: string | null;
   status: string;
 }
-export interface Template { id: number; name: string; prompt: string; }
+
+export interface Template {
+  id: number;
+  name: string;
+  prompt: string;
+}
+
+async function readError(r: Response): Promise<string> {
+  const text = await r.text();
+  if (!text) return `${r.status} ${r.statusText}`.trim();
+  try {
+    const parsed = JSON.parse(text);
+    return parsed.detail || parsed.message || text;
+  } catch {
+    return text;
+  }
+}
 
 export interface Settings {
   whisper_model: string;
@@ -24,7 +40,7 @@ export interface Settings {
 }
 
 async function j<T>(r: Response): Promise<T> {
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) throw new Error(await readError(r));
   return r.json();
 }
 
@@ -35,14 +51,16 @@ export const api = {
   getMeeting: (id: number) => fetch(`/meetings/${id}`).then(j<Meeting>),
   start: (title: string, template_id: number | null) =>
     fetch("/recordings/start", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, template_id }),
     }).then(j<Meeting>),
   stop: (id: number) =>
     fetch(`/recordings/${id}/stop`, { method: "POST" }).then(j<Meeting>),
   saveNotes: (id: number, rough_notes: string) =>
     fetch(`/meetings/${id}/notes`, {
-      method: "PUT", headers: { "Content-Type": "application/json" },
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rough_notes }),
     }).then(j<{ ok: boolean }>),
   transcribe: (id: number) =>
