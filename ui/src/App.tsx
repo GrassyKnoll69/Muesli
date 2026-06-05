@@ -1,27 +1,39 @@
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
-import Library from "./pages/Library";
+import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
 import ActiveMeeting from "./pages/ActiveMeeting";
+import Library from "./pages/Library";
 import MeetingDetail from "./pages/MeetingDetail";
 import Templates from "./pages/Templates";
 import SettingsPage from "./pages/Settings";
 
+function navClass({ isActive }: { isActive: boolean }) {
+  return `nav-link${isActive ? " active" : ""}`;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
-      <nav style={{ display: "flex", gap: 16, padding: 12, borderBottom: "1px solid #ddd" }}>
-        <Link to="/">Library</Link>
-        <Link to="/new">New Meeting</Link>
-        <Link to="/templates">Templates</Link>
-        <Link to="/settings">Settings</Link>
-      </nav>
-      <div style={{ padding: 16, maxWidth: 820, margin: "0 auto" }}>
-        <Routes>
-          <Route path="/" element={<Library />} />
-          <Route path="/new" element={<ActiveMeeting />} />
-          <Route path="/meetings/:id" element={<MeetingDetail />} />
-          <Route path="/templates" element={<Templates />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
+      <div className="app-shell">
+        <aside className="sidebar">
+          <div className="brand">
+            <div className="brand-title">Muesli</div>
+            <div className="brand-subtitle">Local AI meeting notes</div>
+          </div>
+          <nav className="nav-list" aria-label="Primary navigation">
+            <NavLink className={navClass} to="/">Meetings</NavLink>
+            <NavLink className={navClass} to="/new">Record</NavLink>
+            <NavLink className={navClass} to="/templates">Templates</NavLink>
+            <NavLink className={navClass} to="/settings">Settings</NavLink>
+          </nav>
+        </aside>
+        <main className="main">
+          <Routes>
+            <Route path="/" element={<Library />} />
+            <Route path="/new" element={<ActiveMeeting />} />
+            <Route path="/meetings/:id" element={<MeetingDetail />} />
+            <Route path="/templates" element={<Templates />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </main>
       </div>
     </BrowserRouter>
   );
