@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
 from muesli_engine.storage.models import Meeting, Template
+from muesli_engine import secrets
+from muesli_engine.enhance import llm
+from muesli_engine.enhance.templates import build_prompt
+from muesli_engine.export import assemble_export_markdown, export_filename
+from muesli_engine.settings_store import save_settings
 
 
 class StartRequest(BaseModel):
@@ -21,9 +26,50 @@ class EnhanceRequest(BaseModel):
     template_id: int | None = None
 
 
+class SettingsUpdate(BaseModel):
+    whisper_model: str | None = None
+    whisper_device: str | None = None
+    whisper_compute_type: str | None = None
+    ollama_model: str | None = None
+    ollama_host: str | None = None
+    enhancement_backend: str | None = None
+    cloud_provider: str | None = None
+    cloud_model: str | None = None
+    cloud_api_key: str | None = None
+
+
+class TestCloudRequest(BaseModel):
+    provider: str
+    model: str
+    key: str | None = None
+
+
+class PreviewRequest(BaseModel):
+    prompt: str
+    rough_notes: str | None = None
+    transcript: str | None = None
+
+
 def build_router(ctx) -> APIRouter:
     """ctx exposes: db, settings, transcribe_fn, enhance_fn, recorder_factory."""
     router = APIRouter()
+
+    def settings_payload() -> dict:
+        s = ctx.settings
+        return {
+            "whisper_model": s.whisper_model,
+            "whisper_device": s.whisper_device,
+            "whisper_compute_type": s.whisper_compute_type,
+            "ollama_model": s.ollama_model,
+            "ollama_host": s.ollama_host,
+            "enhancement_backend": s.enhancement_backend,
+            "cloud_provider": s.cloud_provider,
+            "cloud_model": s.cloud_model,
+            "cloud_key_present": {
+                "openai": bool(secrets.get_api_key("openai")),
+                "anthropic": bool(secrets.get_api_key("anthropic")),
+            },
+        }
 
     @router.post("/recordings/start")
     def start(req: StartRequest):
@@ -103,5 +149,56 @@ def build_router(ctx) -> APIRouter:
     def delete_template(template_id: int):
         ctx.db.delete_template(template_id)
         return {"ok": True}
+
+    @router.get("/settings")
+    def get_settings():
+        return settings_payload()
+
+    @router.put("/settings")
+    def update_settings(req: SettingsUpdate):
+        partial = {k: v for k, v in req.model_dump().items() if v is not None}
+        key = partial.pop("cloud_api_key", None)
+        save_settings(ctx.db, ctx.settings, partial)
+        if key is not None:
+            provider = partial.get("cloud_provider") or ctx.settings.cloud_provider
+            if not provider:
+                raise HTTPException(status_code=422, detail="set a cloud provider before saving a key")
+            try:
+                secrets.set_api_key(provider, key)
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"secure storage unavailable: {exc}")
+        return settings_payload()
+
+    @router.post("/settings/test-cloud")
+    def test_cloud(req: TestCloudRequest):
+        key = req.key or secrets.get_api_key(req.provider)
+        if not key:
+            return {"ok": False, "message": f"No API key set for {req.provider}"}
+        ok, message = llm.validate_cloud(req.provider, key, req.model)
+        return {"ok": ok, "message": message}
+
+    @router.get("/ollama/models")
+    def ollama_models():
+        return llm.list_ollama_models(ctx.settings.ollama_host)
+
+    @router.post("/templates/preview")
+    def preview_template(req: PreviewRequest):
+        notes = req.rough_notes if req.rough_notes is not None else "Sample rough notes."
+        transcript = req.transcript if req.transcript is not None else "Sample transcript text."
+        return {"prompt": build_prompt(req.prompt, notes, transcript)}
+
+    @router.get("/meetings/{meeting_id}/export")
+    def export_meeting(meeting_id: int):
+        try:
+            meeting = ctx.db.get_meeting(meeting_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="meeting not found")
+        md = assemble_export_markdown(meeting)
+        filename = export_filename(meeting)
+        return Response(
+            content=md,
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     return router

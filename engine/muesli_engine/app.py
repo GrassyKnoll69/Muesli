@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from muesli_engine.config import Settings, ensure_dirs
 from muesli_engine.enhance.templates import DEFAULT_TEMPLATES
 from muesli_engine.storage.db import Database
+from muesli_engine.settings_store import load_settings
 
 
 class EngineContext:
@@ -65,9 +66,6 @@ def create_app(
     from muesli_engine.api.routes import build_router
     from muesli_engine import config
 
-    settings = settings or Settings()
-    if enhance_fn is None:
-        enhance_fn = _make_default_enhance(settings)
     if db_path is None:
         ensure_dirs()
         db_path = str(config.DB_PATH)
@@ -77,6 +75,11 @@ def create_app(
     if not db.list_templates():
         for t in DEFAULT_TEMPLATES:
             db.create_template(t)
+
+    if settings is None:
+        settings = load_settings(db)
+    if enhance_fn is None:
+        enhance_fn = _make_default_enhance(settings)
 
     ctx = EngineContext(db, settings, transcribe_fn, enhance_fn, recorder_factory)
     app = FastAPI(title="Muesli Engine")

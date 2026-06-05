@@ -1,14 +1,18 @@
 # Muesli
 
-Muesli is a local-first, open-source AI meeting notetaker — a free alternative to Granola. Record your meeting audio, jot rough notes, then let Muesli transcribe the audio and enhance your notes into clean structured markdown using a local Ollama model. Everything runs on your machine; no data leaves your network. Optionally opt in to a cloud LLM (OpenAI) for enhancement if you prefer.
+Muesli is a local-first, open-source AI meeting notetaker — a free alternative to Granola. Record your meeting audio, jot rough notes, then let Muesli transcribe the audio and enhance your notes into clean structured markdown using a local Ollama model. Everything runs on your machine; no data leaves your network. Optionally opt in to a cloud LLM (OpenAI or Anthropic) for enhancement — configured entirely from the in-app Settings screen.
 
-## Features (v1)
+## Features
 
 - **Manual recording** — start/stop system-audio capture (WASAPI loopback) from the desktop UI.
 - **Template-driven AI enhancement** — choose from built-in templates (General, 1:1, Standup, Sales Call) or create your own; the LLM shapes the notes to the template.
+- **Template editor** — create, edit, duplicate, and delete templates in-app, and preview the exact prompt a template produces before using it.
 - **Searchable library** — full-text search over transcripts and enhanced notes via SQLite FTS5.
+- **Formatted notes** — enhanced notes render as proper markdown (headings, lists, emphasis).
+- **Markdown export** — download any meeting's enhanced notes (with a title/date header) as a `.md` file.
 - **100% free on local models** — runs entirely on Ollama + faster-whisper; no API keys required.
-- **Optional cloud LLM** — configure `enhancement_backend = "cloud"` with an OpenAI key to use GPT-4o-mini instead.
+- **In-app Settings** — switch Whisper model/device, the Ollama model/host, and the enhancement backend without editing files.
+- **Optional cloud LLM** — enter an OpenAI or Anthropic key in Settings, pick a model, and **Test connection**. The key is stored in your OS keyring (Windows Credential Manager), never in the database or in plaintext.
 - **Pywebview desktop shell** — the app opens as a native window (no browser tab needed).
 
 ## Prerequisites
@@ -40,10 +44,12 @@ engine/.venv/Scripts/python -m pip install -r engine/requirements.txt   # Window
 
 # 3. Build the React UI
 cd ui
-npm install
+npm install   # if peer-dep resolution fails, use: npm install --legacy-peer-deps
 npm run build
 cd ..
 ```
+
+> The engine install pulls in `keyring` (for secure cloud-key storage) and the UI pulls in `react-markdown` (for note rendering).
 
 ## Run
 
@@ -69,7 +75,7 @@ set MUESLI_HOME=D:\my-notes   # Windows
 export MUESLI_HOME=~/my-notes  # macOS/Linux
 ```
 
-Settings (Whisper model, Ollama model, cloud backend) are in `engine/muesli_engine/config.py`.
+Most settings (Whisper model/device, Ollama model/host, enhancement backend, cloud provider/model) are editable at runtime from the in-app **Settings** screen and persist in the local SQLite database; `engine/muesli_engine/config.py` holds the defaults. Cloud API keys are entered in Settings and stored in your OS keyring (Windows Credential Manager) — they are never written to the database.
 
 ## Development
 
@@ -87,7 +93,7 @@ Run the Vite dev server (with the engine running separately):
 cd ui && npm run dev
 ```
 
-The Vite proxy forwards `/meetings`, `/recordings`, and `/templates` to `http://localhost:8731`.
+The Vite proxy forwards `/meetings`, `/recordings`, `/templates`, `/settings`, and `/ollama` to `http://localhost:8731`.
 
 ## License
 

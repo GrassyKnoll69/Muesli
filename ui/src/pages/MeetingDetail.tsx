@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
 import { api, Meeting } from "../api/client";
 
 type Tab = "enhanced" | "notes" | "transcript";
@@ -23,15 +24,14 @@ export default function MeetingDetail() {
   }
   if (!m) return <p>Loading…</p>;
 
-  const body = tab === "enhanced" ? m.enhanced_notes
-    : tab === "notes" ? m.rough_notes : m.transcript;
-
   return (
     <div>
       <h1>{m.title}</h1>
       <div style={{ marginBottom: 8 }}>
         <button onClick={doTranscribe}>Transcribe</button>{" "}
         <button onClick={doEnhance}>Enhance</button>{" "}
+        <a href={api.exportUrl(mid)} download
+           style={{ marginLeft: 8 }}>Export .md</a>{" "}
         <span style={{ color: "#c60" }}>{busy}</span>
       </div>
       <div style={{ display: "flex", gap: 8 }}>
@@ -40,7 +40,15 @@ export default function MeetingDetail() {
                   style={{ fontWeight: tab === t ? "bold" : "normal" }}>{t}</button>
         ))}
       </div>
-      <pre style={{ whiteSpace: "pre-wrap", marginTop: 12 }}>{body || "(empty)"}</pre>
+      {tab === "enhanced" ? (
+        <div style={{ marginTop: 12 }}>
+          {m.enhanced_notes ? <ReactMarkdown>{m.enhanced_notes}</ReactMarkdown> : "(empty)"}
+        </div>
+      ) : (
+        <pre style={{ whiteSpace: "pre-wrap", marginTop: 12 }}>
+          {(tab === "notes" ? m.rough_notes : m.transcript) || "(empty)"}
+        </pre>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import Library from "./pages/Library";
 import ActiveMeeting from "./pages/ActiveMeeting";
 import MeetingDetail from "./pages/MeetingDetail";
 import Templates from "./pages/Templates";
+import SettingsPage from "./pages/Settings";
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
         <Link to="/">Library</Link>
         <Link to="/new">New Meeting</Link>
         <Link to="/templates">Templates</Link>
+        <Link to="/settings">Settings</Link>
       </nav>
       <div style={{ padding: 16, maxWidth: 820, margin: "0 auto" }}>
         <Routes>
@@ -18,6 +20,7 @@ export default function App() {
           <Route path="/new" element={<ActiveMeeting />} />
           <Route path="/meetings/:id" element={<MeetingDetail />} />
           <Route path="/templates" element={<Templates />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </div>
     </BrowserRouter>

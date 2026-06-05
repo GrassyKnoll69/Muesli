@@ -9,6 +9,8 @@ export default defineConfig({
       "/meetings": "http://localhost:8731",
       "/recordings": "http://localhost:8731",
       "/templates": "http://localhost:8731",
+      "/settings": "http://localhost:8731",
+      "/ollama": "http://localhost:8731",
     },
   },
 });
