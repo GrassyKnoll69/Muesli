@@ -62,7 +62,7 @@ export default function Templates() {
       <div className="stack">
         <ErrorBanner message={error} />
         {loading && <div className="panel muted">Loading templates...</div>}
-        {!loading && templates.length === 0 && (
+        {!loading && !error && templates.length === 0 && (
           <EmptyState title="No templates found" description="Default templates should appear here after the engine seeds them." />
         )}
         {!loading && templates.map((t) => (
