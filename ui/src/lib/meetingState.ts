@@ -21,8 +21,12 @@ function hasText(value: string | null | undefined): boolean {
   return Boolean(value && value.trim().length > 0);
 }
 
+function meetingStatus(meeting: Meeting): string {
+  return meeting.status.toLowerCase();
+}
+
 export function deriveMeetingState(meeting: Meeting): MeetingDisplayState {
-  const status = meeting.status.toLowerCase();
+  const status = meetingStatus(meeting);
 
   if (status === "recording") {
     return { key: "recording", label: "Recording", tone: "recording", nextAction: "Keep taking notes or stop recording." };
@@ -53,4 +57,16 @@ export function deriveMeetingState(meeting: Meeting): MeetingDisplayState {
   }
 
   return { key: "stopped", label: "Stopped", tone: "neutral", nextAction: "Add notes or start processing." };
+}
+
+export function canTranscribeMeeting(meeting: Meeting): boolean {
+  const status = meetingStatus(meeting);
+  const hasAudio = hasText(meeting.audio_path);
+  const readyForTranscription = status === "recorded" || hasAudio;
+  return readyForTranscription && !hasText(meeting.transcript) && !hasText(meeting.enhanced_notes);
+}
+
+export function canEnhanceMeeting(meeting: Meeting): boolean {
+  const status = meetingStatus(meeting);
+  return status === "transcribed" || status === "enhanced" || hasText(meeting.transcript);
 }

@@ -19,6 +19,7 @@ export default function Library() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const latestRequestId = useRef(0);
+  const mounted = useRef(false);
 
   async function load(nextQuery = q) {
     const requestId = latestRequestId.current + 1;
@@ -28,18 +29,24 @@ export default function Library() {
     setError("");
     try {
       const nextMeetings = query ? await api.searchMeetings(query) : await api.listMeetings();
-      if (requestId !== latestRequestId.current) return;
+      if (!mounted.current || requestId !== latestRequestId.current) return;
       setMeetings(nextMeetings);
       setActiveQuery(query);
     } catch (err) {
-      if (requestId !== latestRequestId.current) return;
+      if (!mounted.current || requestId !== latestRequestId.current) return;
       setError(err instanceof Error ? err.message : "Could not load meetings.");
     } finally {
-      if (requestId === latestRequestId.current) setLoading(false);
+      if (mounted.current && requestId === latestRequestId.current) setLoading(false);
     }
   }
 
-  useEffect(() => { load(""); }, []);
+  useEffect(() => {
+    mounted.current = true;
+    load("");
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   return (
     <section className="page">

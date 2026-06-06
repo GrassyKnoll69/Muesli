@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Meeting } from "../api/client";
-import { deriveMeetingState } from "./meetingState";
+import { canEnhanceMeeting, canTranscribeMeeting, deriveMeetingState } from "./meetingState";
 
 function meeting(overrides: Partial<Meeting> = {}): Meeting {
   return {
@@ -48,5 +48,22 @@ describe("deriveMeetingState", () => {
 
   it("marks failed backend statuses as blocked", () => {
     expect(deriveMeetingState(meeting({ status: "failed" })).tone).toBe("danger");
+  });
+
+  it("only allows transcription after audio is available", () => {
+    expect(canTranscribeMeeting(meeting({ status: "recording" }))).toBe(false);
+    expect(canTranscribeMeeting(meeting({ status: "recorded" }))).toBe(true);
+    expect(canTranscribeMeeting(meeting({ audio_path: "meeting.wav" }))).toBe(true);
+  });
+
+  it("does not allow transcription after transcript or enhanced notes exist", () => {
+    expect(canTranscribeMeeting(meeting({ status: "recorded", transcript: "Full transcript" }))).toBe(false);
+    expect(canTranscribeMeeting(meeting({ status: "recorded", enhanced_notes: "# Notes" }))).toBe(false);
+  });
+
+  it("only allows enhancement after transcript is available", () => {
+    expect(canEnhanceMeeting(meeting({ status: "recorded" }))).toBe(false);
+    expect(canEnhanceMeeting(meeting({ status: "transcribed" }))).toBe(true);
+    expect(canEnhanceMeeting(meeting({ transcript: "Full transcript" }))).toBe(true);
   });
 });

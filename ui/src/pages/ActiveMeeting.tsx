@@ -24,14 +24,23 @@ export default function ActiveMeeting() {
   const stoppingRef = useRef(false);
 
   useEffect(() => {
+    let active = true;
+
     api
       .listTemplates()
-      .then(setTemplates)
-      .catch((err) =>
-        setError(err instanceof Error ? err.message : "Could not load templates.")
-      );
+      .then((nextTemplates) => {
+        if (active) setTemplates(nextTemplates);
+      })
+      .catch((err) => {
+        if (active) {
+          setError(err instanceof Error ? err.message : "Could not load templates.");
+        }
+      });
 
-    return () => window.clearTimeout(timer.current);
+    return () => {
+      active = false;
+      window.clearTimeout(timer.current);
+    };
   }, []);
 
   async function start() {
@@ -40,7 +49,9 @@ export default function ActiveMeeting() {
     setStarting(true);
     setError("");
     try {
-      const meeting = await api.start(title || "Untitled meeting", templateId);
+      const meetingTitle = title.trim() || "Untitled meeting";
+      const meeting = await api.start(meetingTitle, templateId);
+      setTitle(meeting.title);
       setMeetingId(meeting.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start recording.");

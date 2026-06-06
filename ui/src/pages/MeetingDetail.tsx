@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import ErrorBanner from "../components/ErrorBanner";
 import StatusChip from "../components/StatusChip";
 import { api, Meeting } from "../api/client";
-import { deriveMeetingState } from "../lib/meetingState";
+import { canEnhanceMeeting, canTranscribeMeeting, deriveMeetingState } from "../lib/meetingState";
 
 type Tab = "enhanced" | "notes" | "transcript";
+
+const TABS: Tab[] = ["enhanced", "notes", "transcript"];
 
 function parseMeetingId(value: string | undefined): number | null {
   if (!value || !/^\d+$/.test(value)) return null;
@@ -90,6 +92,24 @@ export default function MeetingDetail() {
 
   const state = deriveMeetingState(activeMeeting);
   const body = tab === "enhanced" ? activeMeeting.enhanced_notes : tab === "notes" ? activeMeeting.rough_notes : activeMeeting.transcript;
+  const canTranscribe = canTranscribeMeeting(activeMeeting);
+  const canEnhance = canEnhanceMeeting(activeMeeting);
+  const selectedTabId = `meeting-tab-${tab}`;
+  const selectedPanelId = `meeting-panel-${tab}`;
+
+  function tabLabel(value: Tab): string {
+    return value === "enhanced" ? "Enhanced" : value === "notes" ? "My notes" : "Transcript";
+  }
+
+  function onTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, value: Tab) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const currentIndex = TABS.indexOf(value);
+    const nextIndex = event.key === "ArrowLeft"
+      ? (currentIndex + TABS.length - 1) % TABS.length
+      : (currentIndex + 1) % TABS.length;
+    setTab(TABS[nextIndex]);
+  }
 
   return (
     <section className="page">
@@ -108,29 +128,48 @@ export default function MeetingDetail() {
         <ErrorBanner message={error} />
 
         <div className="panel cluster">
-          <button disabled={Boolean(busy)} onClick={() => runAction("Transcribing", activeMeeting.id, () => api.transcribe(activeMeeting.id), "transcript")}>
+          <button
+            disabled={Boolean(busy) || !canTranscribe}
+            onClick={() => runAction("Transcribing", activeMeeting.id, () => api.transcribe(activeMeeting.id), "transcript")}
+          >
             Transcribe
           </button>
-          <button className="button-primary" disabled={Boolean(busy)} onClick={() => runAction("Enhancing", activeMeeting.id, () => api.enhance(activeMeeting.id, activeMeeting.template_id ?? null), "enhanced")}>
+          <button
+            className="button-primary"
+            disabled={Boolean(busy) || !canEnhance}
+            onClick={() => runAction("Enhancing", activeMeeting.id, () => api.enhance(activeMeeting.id, activeMeeting.template_id ?? null), "enhanced")}
+          >
             Enhance
           </button>
         </div>
 
         <div className="panel stack">
-          <div className="tabs" aria-label="Meeting content">
-            {(["enhanced", "notes", "transcript"] as Tab[]).map((t) => (
+          <div className="tabs" role="tablist" aria-label="Meeting content">
+            {TABS.map((t) => (
               <button
                 key={t}
+                id={`meeting-tab-${t}`}
                 className={`tab${tab === t ? " active" : ""}`}
-                aria-pressed={tab === t}
+                aria-controls={`meeting-panel-${t}`}
+                aria-selected={tab === t}
+                role="tab"
+                tabIndex={tab === t ? 0 : -1}
                 type="button"
                 onClick={() => setTab(t)}
+                onKeyDown={(event) => onTabKeyDown(event, t)}
               >
-                {t === "enhanced" ? "Enhanced" : t === "notes" ? "My notes" : "Transcript"}
+                {tabLabel(t)}
               </button>
             ))}
           </div>
-          <div className="pre">{body || "Nothing here yet."}</div>
+          <div
+            aria-labelledby={selectedTabId}
+            className="pre"
+            id={selectedPanelId}
+            role="tabpanel"
+          >
+            {body || "Nothing here yet."}
+          </div>
         </div>
 
         <div className="panel">
