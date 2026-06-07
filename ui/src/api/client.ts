@@ -103,6 +103,8 @@ export const api = {
     }).then(j<{ ok: boolean }>),
   deleteMeeting: (id: number) =>
     fetch(`/meetings/${id}`, { method: "DELETE" }).then(j<{ ok: boolean }>),
+  openMeetingLocation: (id: number) =>
+    fetch(`/meetings/${id}/open-location`, { method: "POST" }).then(j<{ ok: boolean; path: string }>),
   transcribe: (id: number) =>
     fetch(`/meetings/${id}/transcribe`, { method: "POST" }).then(j<Meeting>),
   enhance: (id: number, template_id: number | null) =>

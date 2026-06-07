@@ -4,13 +4,14 @@ from muesli_engine.app import create_app
 import muesli_engine.secrets as secrets
 
 
-def client() -> TestClient:
+def client(open_path_fn=None) -> TestClient:
     # In-memory DB; stub transcribe/enhance so no models are needed.
     app = create_app(
         db_path=":memory:",
         transcribe_fn=lambda path, settings: "stub transcript about pricing",
         enhance_fn=lambda tprompt, notes, transcript: "## Summary\nstub enhanced",
         recorder_factory=None,
+        open_path_fn=open_path_fn or (lambda path, select=False: None),
     )
     return TestClient(app)
 
@@ -117,3 +118,16 @@ def test_delete_meeting_removes_old_note():
 
     assert c.delete(f"/meetings/{mid}").json() == {"ok": True}
     assert c.get(f"/meetings/{mid}").status_code == 404
+
+
+def test_open_meeting_location_uses_file_explorer_hook():
+    opened = []
+    c = client(open_path_fn=lambda path, select=False: opened.append((str(path), select)))
+    mid = c.post("/recordings/start", json={"title": "Open me"}).json()["id"]
+
+    response = c.post(f"/meetings/{mid}/open-location")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert len(opened) == 1
+    assert opened[0][1] is False

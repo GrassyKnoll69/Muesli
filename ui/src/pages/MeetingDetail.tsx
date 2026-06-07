@@ -27,6 +27,7 @@ export default function MeetingDetail() {
   const [notesDraft, setNotesDraft] = useState("");
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesSaving, setNotesSaving] = useState(false);
+  const [openingLocation, setOpeningLocation] = useState(false);
   const loadRequest = useRef(0);
   const currentMeetingId = useRef<number | null>(mid);
   const activeAction = useRef<{ request: number; meetingId: number } | null>(null);
@@ -113,6 +114,20 @@ export default function MeetingDetail() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete meeting.");
       setBusy("");
+    }
+  }
+
+  async function openInFileExplorer() {
+    const current = mid !== null && meeting?.id === mid ? meeting : null;
+    if (!current || openingLocation) return;
+    setOpeningLocation(true);
+    setError("");
+    try {
+      await api.openMeetingLocation(current.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not open file explorer.");
+    } finally {
+      setOpeningLocation(false);
     }
   }
 
@@ -236,6 +251,9 @@ export default function MeetingDetail() {
                 type="button"
               >
                 Clear notes
+              </button>
+              <button disabled={openingLocation} onClick={openInFileExplorer} type="button">
+                {openingLocation ? "Opening..." : "Open in file explorer"}
               </button>
               {notesDirty && <span className="muted">Unsaved changes</span>}
             </div>
