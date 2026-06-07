@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
+from muesli_engine.config import APP_DIR
 from muesli_engine.storage.models import Meeting, Template
 from muesli_engine import secrets
 from muesli_engine.enhance import llm
@@ -131,6 +133,33 @@ def build_router(ctx) -> APIRouter:
             return ctx.db.get_meeting(meeting_id)
         except KeyError:
             raise HTTPException(status_code=404, detail="meeting not found")
+
+    @router.delete("/meetings/{meeting_id}")
+    def delete_meeting(meeting_id: int):
+        try:
+            ctx.db.get_meeting(meeting_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="meeting not found")
+        ctx.db.delete_meeting(meeting_id)
+        return {"ok": True}
+
+    @router.post("/meetings/{meeting_id}/open-location")
+    def open_meeting_location(meeting_id: int):
+        try:
+            meeting = ctx.db.get_meeting(meeting_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="meeting not found")
+
+        if meeting.audio_path:
+            audio_path = Path(meeting.audio_path)
+            target = audio_path if audio_path.exists() else audio_path.parent
+            select = audio_path.exists()
+        else:
+            target = APP_DIR
+            select = False
+
+        ctx.open_path_fn(target, select=select)
+        return {"ok": True, "path": str(target)}
 
     @router.get("/templates")
     def list_templates():

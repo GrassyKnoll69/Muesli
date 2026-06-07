@@ -41,6 +41,17 @@ def test_list_meetings_newest_first():
     assert titles == ["B", "A"]
 
 
+def test_delete_meeting_removes_it_from_listing_and_search():
+    db = make_db()
+    m = db.create_meeting(Meeting(title="Sales call", created_at=datetime.now(timezone.utc)))
+    db.set_transcript(m.id, "customer asked about pricing tiers")
+
+    db.delete_meeting(m.id)
+
+    assert db.list_meetings() == []
+    assert db.search_meetings("pricing") == []
+
+
 def test_full_text_search_matches_enhanced_and_transcript():
     db = make_db()
     m = db.create_meeting(Meeting(title="Sales call", created_at=datetime.now(timezone.utc)))

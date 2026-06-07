@@ -99,6 +99,10 @@ class Database:
         )
         self.conn.commit()
 
+    def delete_meeting(self, meeting_id: int) -> None:
+        self.conn.execute("DELETE FROM meetings WHERE id=?", (meeting_id,))
+        self.conn.commit()
+
     def set_audio_path(self, meeting_id: int, path: str) -> None:
         self._update_status(meeting_id, "recorded")
         self.conn.execute(

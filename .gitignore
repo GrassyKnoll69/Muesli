@@ -22,3 +22,5 @@ ui/dist/
 # Local agent context (machine-specific paths, not for public repo)
 AGENTS.md
 CLAUDE.md
+.superpowers/
+.worktrees/

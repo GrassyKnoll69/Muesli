@@ -9,12 +9,13 @@ from muesli_engine.settings_store import load_settings
 
 
 class EngineContext:
-    def __init__(self, db, settings, transcribe_fn, enhance_fn, recorder_factory):
+    def __init__(self, db, settings, transcribe_fn, enhance_fn, recorder_factory, open_path_fn):
         self.db = db
         self.settings = settings
         self.transcribe_fn = transcribe_fn
         self.enhance_fn = enhance_fn
         self.recorder_factory = recorder_factory
+        self.open_path_fn = open_path_fn
         self._recorders: dict[int, object] = {}
 
     def start_recording(self, meeting_id: int) -> None:
@@ -56,12 +57,32 @@ def _default_recorder_factory(path):
     return Recorder(path)
 
 
+def _default_open_path(path, select: bool = False) -> None:
+    import os
+    import subprocess
+    import sys
+
+    if sys.platform.startswith("win"):
+        if select:
+            subprocess.Popen(["explorer", f"/select,{path}"])
+        else:
+            os.startfile(path)
+        return
+
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", "-R" if select else str(path), str(path)] if select else ["open", str(path)])
+        return
+
+    subprocess.Popen(["xdg-open", str(path)])
+
+
 def create_app(
     db_path: str | None = None,
     settings: Settings | None = None,
     transcribe_fn=_default_transcribe,
     enhance_fn=None,
     recorder_factory=_default_recorder_factory,
+    open_path_fn=_default_open_path,
 ) -> FastAPI:
     from muesli_engine.api.routes import build_router
     from muesli_engine import config
@@ -81,7 +102,7 @@ def create_app(
     if enhance_fn is None:
         enhance_fn = _make_default_enhance(settings)
 
-    ctx = EngineContext(db, settings, transcribe_fn, enhance_fn, recorder_factory)
+    ctx = EngineContext(db, settings, transcribe_fn, enhance_fn, recorder_factory, open_path_fn)
     app = FastAPI(title="Muesli Engine")
     app.include_router(build_router(ctx))
 

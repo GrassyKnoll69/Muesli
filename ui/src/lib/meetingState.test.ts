@@ -1,0 +1,69 @@
+import { describe, expect, it } from "vitest";
+import { Meeting } from "../api/client";
+import { canEnhanceMeeting, canTranscribeMeeting, deriveMeetingState } from "./meetingState";
+
+function meeting(overrides: Partial<Meeting> = {}): Meeting {
+  return {
+    id: 1,
+    title: "Weekly sync",
+    created_at: "2026-06-05T18:00:00Z",
+    rough_notes: "",
+    transcript: "",
+    enhanced_notes: "",
+    template_id: null,
+    audio_path: null,
+    status: "created",
+    ...overrides,
+  };
+}
+
+describe("deriveMeetingState", () => {
+  it("shows recording when the backend status says recording", () => {
+    expect(deriveMeetingState(meeting({ status: "recording" })).label).toBe("Recording");
+  });
+
+  it("asks for transcription after a stopped meeting has audio but no transcript", () => {
+    expect(deriveMeetingState(meeting({ status: "stopped", audio_path: "meeting.wav" })).label).toBe("Needs transcription");
+  });
+
+  it("asks for enhancement when transcript exists but enhanced notes are empty", () => {
+    expect(deriveMeetingState(meeting({ transcript: "Full transcript" })).label).toBe("Needs enhancement");
+  });
+
+  it("marks a meeting complete when enhanced notes exist", () => {
+    expect(deriveMeetingState(meeting({ enhanced_notes: "# Notes" })).label).toBe("Complete");
+  });
+
+  it("asks for transcription when the backend status says recorded", () => {
+    expect(deriveMeetingState(meeting({ status: "recorded" })).label).toBe("Needs transcription");
+  });
+
+  it("asks for enhancement when the backend status says transcribed", () => {
+    expect(deriveMeetingState(meeting({ status: "transcribed" })).label).toBe("Needs enhancement");
+  });
+
+  it("marks a meeting complete when the backend status says enhanced", () => {
+    expect(deriveMeetingState(meeting({ status: "enhanced" })).label).toBe("Complete");
+  });
+
+  it("marks failed backend statuses as blocked", () => {
+    expect(deriveMeetingState(meeting({ status: "failed" })).tone).toBe("danger");
+  });
+
+  it("only allows transcription after audio is available", () => {
+    expect(canTranscribeMeeting(meeting({ status: "recording" }))).toBe(false);
+    expect(canTranscribeMeeting(meeting({ status: "recorded" }))).toBe(true);
+    expect(canTranscribeMeeting(meeting({ audio_path: "meeting.wav" }))).toBe(true);
+  });
+
+  it("does not allow transcription after transcript or enhanced notes exist", () => {
+    expect(canTranscribeMeeting(meeting({ status: "recorded", transcript: "Full transcript" }))).toBe(false);
+    expect(canTranscribeMeeting(meeting({ status: "recorded", enhanced_notes: "# Notes" }))).toBe(false);
+  });
+
+  it("only allows enhancement after transcript is available", () => {
+    expect(canEnhanceMeeting(meeting({ status: "recorded" }))).toBe(false);
+    expect(canEnhanceMeeting(meeting({ status: "transcribed" }))).toBe(true);
+    expect(canEnhanceMeeting(meeting({ transcript: "Full transcript" }))).toBe(true);
+  });
+});

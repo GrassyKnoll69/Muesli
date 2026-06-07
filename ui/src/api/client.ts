@@ -9,7 +9,61 @@ export interface Meeting {
   audio_path: string | null;
   status: string;
 }
-export interface Template { id: number; name: string; prompt: string; }
+
+export interface Template {
+  id: number;
+  name: string;
+  prompt: string;
+}
+
+async function readError(r: Response): Promise<string> {
+  const text = await r.text();
+  if (!text) return `${r.status} ${r.statusText}`.trim();
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return errorMessage(parsed, text);
+  } catch {
+    return text;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringifyOrText(value: unknown, text: string): string {
+  try {
+    return JSON.stringify(value) ?? text;
+  } catch {
+    return text;
+  }
+}
+
+function arrayMessages(value: unknown[]): string | null {
+  const messages = value.flatMap((item) => {
+    if (typeof item === "string" && item.trim()) return [item];
+    if (isRecord(item) && typeof item.msg === "string" && item.msg.trim()) {
+      return [item.msg];
+    }
+    return [];
+  });
+  return messages.length > 0 ? messages.join("; ") : null;
+}
+
+function errorMessage(value: unknown, text: string): string {
+  if (isRecord(value)) {
+    if (typeof value.detail === "string") return value.detail;
+    if (typeof value.message === "string") return value.message;
+    if (Array.isArray(value.detail)) {
+      return arrayMessages(value.detail) ?? stringifyOrText(value.detail, text);
+    }
+    return stringifyOrText(value, text);
+  }
+
+  if (Array.isArray(value)) return stringifyOrText(value, text);
+  if (typeof value === "string") return value;
+  return text;
+}
 
 export interface Settings {
   whisper_model: string;
@@ -24,7 +78,7 @@ export interface Settings {
 }
 
 async function j<T>(r: Response): Promise<T> {
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) throw new Error(await readError(r));
   return r.json();
 }
 
@@ -35,16 +89,22 @@ export const api = {
   getMeeting: (id: number) => fetch(`/meetings/${id}`).then(j<Meeting>),
   start: (title: string, template_id: number | null) =>
     fetch("/recordings/start", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, template_id }),
     }).then(j<Meeting>),
   stop: (id: number) =>
     fetch(`/recordings/${id}/stop`, { method: "POST" }).then(j<Meeting>),
   saveNotes: (id: number, rough_notes: string) =>
     fetch(`/meetings/${id}/notes`, {
-      method: "PUT", headers: { "Content-Type": "application/json" },
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rough_notes }),
     }).then(j<{ ok: boolean }>),
+  deleteMeeting: (id: number) =>
+    fetch(`/meetings/${id}`, { method: "DELETE" }).then(j<{ ok: boolean }>),
+  openMeetingLocation: (id: number) =>
+    fetch(`/meetings/${id}/open-location`, { method: "POST" }).then(j<{ ok: boolean; path: string }>),
   transcribe: (id: number) =>
     fetch(`/meetings/${id}/transcribe`, { method: "POST" }).then(j<Meeting>),
   enhance: (id: number, template_id: number | null) =>
