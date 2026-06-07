@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import ErrorBanner from "../components/ErrorBanner";
+import MarkdownContent from "../components/MarkdownContent";
 import StatusChip from "../components/StatusChip";
 import { api, Meeting } from "../api/client";
 import { canEnhanceMeeting, canTranscribeMeeting, deriveMeetingState } from "../lib/meetingState";
@@ -18,10 +19,14 @@ function parseMeetingId(value: string | undefined): number | null {
 export default function MeetingDetail() {
   const { id } = useParams();
   const mid = parseMeetingId(id);
+  const nav = useNavigate();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [tab, setTab] = useState<Tab>("enhanced");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [notesDraft, setNotesDraft] = useState("");
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesSaving, setNotesSaving] = useState(false);
   const loadRequest = useRef(0);
   const currentMeetingId = useRef<number | null>(mid);
   const activeAction = useRef<{ request: number; meetingId: number } | null>(null);
@@ -44,6 +49,7 @@ export default function MeetingDetail() {
       const nextMeeting = await api.getMeeting(mid);
       if (loadRequest.current === request) {
         setMeeting(nextMeeting);
+        setNotesDraft(nextMeeting.rough_notes);
       }
     } catch (err) {
       if (loadRequest.current === request) {
@@ -64,6 +70,7 @@ export default function MeetingDetail() {
       const nextMeeting = await action();
       if (activeAction.current?.request === request && activeAction.current.meetingId === meetingId && currentMeetingId.current === meetingId) {
         setMeeting(nextMeeting);
+        setNotesDraft(nextMeeting.rough_notes);
         if (nextTab) setTab(nextTab);
       }
     } catch (err) {
@@ -75,6 +82,37 @@ export default function MeetingDetail() {
         activeAction.current = null;
         setBusy("");
       }
+    }
+  }
+
+  async function saveNotes(nextNotes = notesDraft) {
+    const current = mid !== null && meeting?.id === mid ? meeting : null;
+    if (!current || notesSaving) return;
+    setNotesSaving(true);
+    setError("");
+    try {
+      await api.saveNotes(current.id, nextNotes);
+      setMeeting({ ...current, rough_notes: nextNotes });
+      setNotesDraft(nextNotes);
+      setEditingNotes(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save notes.");
+    } finally {
+      setNotesSaving(false);
+    }
+  }
+
+  async function deleteMeeting() {
+    const current = mid !== null && meeting?.id === mid ? meeting : null;
+    if (!current || !window.confirm(`Delete "${current.title}"?`)) return;
+    setBusy("Deleting");
+    setError("");
+    try {
+      await api.deleteMeeting(current.id);
+      nav("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete meeting.");
+      setBusy("");
     }
   }
 
@@ -91,14 +129,23 @@ export default function MeetingDetail() {
   }
 
   const state = deriveMeetingState(activeMeeting);
-  const body = tab === "enhanced" ? activeMeeting.enhanced_notes : tab === "notes" ? activeMeeting.rough_notes : activeMeeting.transcript;
+  const body = tab === "notes" ? activeMeeting.rough_notes : activeMeeting.transcript;
   const canTranscribe = canTranscribeMeeting(activeMeeting);
   const canEnhance = canEnhanceMeeting(activeMeeting);
+  const notesDirty = notesDraft !== activeMeeting.rough_notes;
   const selectedTabId = `meeting-tab-${tab}`;
   const selectedPanelId = `meeting-panel-${tab}`;
 
   function tabLabel(value: Tab): string {
     return value === "enhanced" ? "Enhanced" : value === "notes" ? "My notes" : "Transcript";
+  }
+
+  function selectTab(value: Tab) {
+    if (value !== "notes") {
+      setEditingNotes(false);
+      setNotesDraft(meeting?.rough_notes ?? "");
+    }
+    setTab(value);
   }
 
   function onTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, value: Tab) {
@@ -108,7 +155,7 @@ export default function MeetingDetail() {
     const nextIndex = event.key === "ArrowLeft"
       ? (currentIndex + TABS.length - 1) % TABS.length
       : (currentIndex + 1) % TABS.length;
-    setTab(TABS[nextIndex]);
+    selectTab(TABS[nextIndex]);
   }
 
   return (
@@ -141,6 +188,9 @@ export default function MeetingDetail() {
           >
             Enhance
           </button>
+          <button className="button-danger" disabled={Boolean(busy)} onClick={deleteMeeting} type="button">
+            Delete meeting
+          </button>
         </div>
 
         <div className="panel stack">
@@ -155,20 +205,58 @@ export default function MeetingDetail() {
                 role="tab"
                 tabIndex={tab === t ? 0 : -1}
                 type="button"
-                onClick={() => setTab(t)}
+                onClick={() => selectTab(t)}
                 onKeyDown={(event) => onTabKeyDown(event, t)}
               >
                 {tabLabel(t)}
               </button>
             ))}
           </div>
-          <div
-            aria-labelledby={selectedTabId}
-            className="pre"
-            id={selectedPanelId}
-            role="tabpanel"
-          >
-            {body || "Nothing here yet."}
+          {tab === "notes" && (
+            <div className="cluster">
+              {!editingNotes && <button onClick={() => setEditingNotes(true)} type="button">Edit notes</button>}
+              {editingNotes && (
+                <>
+                  <button className="button-primary" disabled={notesSaving} onClick={() => saveNotes()} type="button">
+                    {notesSaving ? "Saving..." : "Save notes"}
+                  </button>
+                  <button
+                    disabled={notesSaving}
+                    onClick={() => { setEditingNotes(false); setNotesDraft(activeMeeting.rough_notes); }}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                </>
+              )}
+              <button
+                className="button-danger"
+                disabled={notesSaving || (!activeMeeting.rough_notes && !notesDraft)}
+                onClick={() => saveNotes("")}
+                type="button"
+              >
+                Clear notes
+              </button>
+              {notesDirty && <span className="muted">Unsaved changes</span>}
+            </div>
+          )}
+          <div aria-labelledby={selectedTabId} id={selectedPanelId} role="tabpanel">
+            {tab === "enhanced" && (
+              <div className="markdown-panel">
+                <MarkdownContent markdown={activeMeeting.enhanced_notes} />
+              </div>
+            )}
+            {tab === "notes" && editingNotes && (
+              <textarea
+                aria-label="Edit rough meeting notes"
+                className="textarea"
+                value={notesDraft}
+                onChange={(event) => setNotesDraft(event.target.value)}
+              />
+            )}
+            {tab !== "enhanced" && !editingNotes && (
+              <div className="pre">{body || "Nothing here yet."}</div>
+            )}
           </div>
         </div>
 

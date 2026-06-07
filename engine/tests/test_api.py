@@ -109,3 +109,11 @@ def test_template_preview_returns_assembled_prompt():
     p = c.post("/templates/preview", json={"prompt": "Format as standup.", "rough_notes": "hi"}).json()["prompt"]
     assert "Format as standup." in p
     assert "hi" in p
+
+
+def test_delete_meeting_removes_old_note():
+    c = client()
+    mid = c.post("/recordings/start", json={"title": "Old notes"}).json()["id"]
+
+    assert c.delete(f"/meetings/{mid}").json() == {"ok": True}
+    assert c.get(f"/meetings/{mid}").status_code == 404

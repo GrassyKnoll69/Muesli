@@ -132,6 +132,15 @@ def build_router(ctx) -> APIRouter:
         except KeyError:
             raise HTTPException(status_code=404, detail="meeting not found")
 
+    @router.delete("/meetings/{meeting_id}")
+    def delete_meeting(meeting_id: int):
+        try:
+            ctx.db.get_meeting(meeting_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="meeting not found")
+        ctx.db.delete_meeting(meeting_id)
+        return {"ok": True}
+
     @router.get("/templates")
     def list_templates():
         return ctx.db.list_templates()

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
 import ActiveMeeting from "./pages/ActiveMeeting";
 import Library from "./pages/Library";
@@ -10,6 +11,16 @@ function navClass({ isActive }: { isActive: boolean }) {
 }
 
 export default function App() {
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    const saved = window.localStorage.getItem("muesli-theme");
+    return saved === "dark" ? "dark" : "light";
+  });
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("muesli-theme", theme);
+  }, [theme]);
+
   return (
     <BrowserRouter>
       <div className="app-shell">
@@ -18,6 +29,17 @@ export default function App() {
             <div className="brand-title">Muesli</div>
             <div className="brand-subtitle">Local AI meeting notes</div>
           </div>
+          <label className="theme-switch">
+            <span>Light</span>
+            <input
+              aria-label="Use dark mode"
+              checked={theme === "dark"}
+              onChange={(event) => setTheme(event.target.checked ? "dark" : "light")}
+              type="checkbox"
+            />
+            <span className="theme-slider" aria-hidden="true" />
+            <span>Dark</span>
+          </label>
           <nav className="nav-list" aria-label="Primary navigation">
             <NavLink className={navClass} to="/">Meetings</NavLink>
             <NavLink className={navClass} to="/new">Record</NavLink>

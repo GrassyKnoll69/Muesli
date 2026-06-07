@@ -101,6 +101,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rough_notes }),
     }).then(j<{ ok: boolean }>),
+  deleteMeeting: (id: number) =>
+    fetch(`/meetings/${id}`, { method: "DELETE" }).then(j<{ ok: boolean }>),
   transcribe: (id: number) =>
     fetch(`/meetings/${id}/transcribe`, { method: "POST" }).then(j<Meeting>),
   enhance: (id: number, template_id: number | null) =>
