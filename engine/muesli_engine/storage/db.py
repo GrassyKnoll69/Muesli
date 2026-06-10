@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
-from muesli_engine.storage.models import Meeting, Template
+from muesli_engine.storage.models import Meeting, Segment, Template
 
 _STATUS_ORDER = ["recording", "recorded", "transcribed", "enhanced"]
 
@@ -46,6 +46,22 @@ CREATE TRIGGER IF NOT EXISTS meetings_au AFTER UPDATE ON meetings BEGIN
     INSERT INTO meetings_fts(rowid, title, enhanced_notes, transcript)
     VALUES (new.id, new.title, new.enhanced_notes, new.transcript);
 END;
+CREATE TABLE IF NOT EXISTS transcript_segments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    meeting_id INTEGER NOT NULL,
+    start REAL NOT NULL,
+    end REAL NOT NULL,
+    speaker_key TEXT NOT NULL,
+    source TEXT NOT NULL,
+    text TEXT NOT NULL,
+    FOREIGN KEY(meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS speaker_labels (
+    meeting_id INTEGER NOT NULL,
+    speaker_key TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    PRIMARY KEY (meeting_id, speaker_key)
+);
 """
 
 
@@ -57,16 +73,43 @@ class Database:
 
     def init_schema(self) -> None:
         self.conn.executescript(SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Idempotently add new columns to meetings for pre-M3 databases."""
+        existing = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA table_info(meetings)").fetchall()
+        }
+        if "loopback_path" not in existing:
+            self.conn.execute("ALTER TABLE meetings ADD COLUMN loopback_path TEXT")
+        if "mic_path" not in existing:
+            self.conn.execute("ALTER TABLE meetings ADD COLUMN mic_path TEXT")
+        if "diarized" not in existing:
+            self.conn.execute(
+                "ALTER TABLE meetings ADD COLUMN diarized INTEGER NOT NULL DEFAULT 0"
+            )
 
     # --- meetings ---
     def create_meeting(self, m: Meeting) -> Meeting:
         cur = self.conn.execute(
-            "INSERT INTO meetings(title, created_at, audio_path, rough_notes, "
-            "transcript, enhanced_notes, template_id, status) "
-            "VALUES(?,?,?,?,?,?,?,?)",
-            (m.title, m.created_at.isoformat(), m.audio_path, m.rough_notes,
-             m.transcript, m.enhanced_notes, m.template_id, m.status),
+            "INSERT INTO meetings(title, created_at, audio_path, loopback_path, mic_path, "
+            "rough_notes, transcript, enhanced_notes, template_id, status, diarized) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                m.title,
+                m.created_at.isoformat(),
+                m.audio_path,
+                m.loopback_path,
+                m.mic_path,
+                m.rough_notes,
+                m.transcript,
+                m.enhanced_notes,
+                m.template_id,
+                m.status,
+                int(m.diarized),
+            ),
         )
         self.conn.commit()
         return self.get_meeting(cur.lastrowid)
@@ -104,9 +147,24 @@ class Database:
         self.conn.commit()
 
     def set_audio_path(self, meeting_id: int, path: str) -> None:
+        """Deprecated: sets audio_path and loopback_path for back-compat."""
         self._update_status(meeting_id, "recorded")
         self.conn.execute(
-            "UPDATE meetings SET audio_path=? WHERE id=?", (path, meeting_id)
+            "UPDATE meetings SET audio_path=?, loopback_path=? WHERE id=?",
+            (path, path, meeting_id),
+        )
+        self.conn.commit()
+
+    def set_audio_paths(self, meeting_id: int, loopback: str, mic: str) -> None:
+        self.conn.execute(
+            "UPDATE meetings SET loopback_path=?, mic_path=? WHERE id=?",
+            (loopback, mic, meeting_id),
+        )
+        self.conn.commit()
+
+    def set_diarized(self, meeting_id: int, value: bool) -> None:
+        self.conn.execute(
+            "UPDATE meetings SET diarized=? WHERE id=?", (int(value), meeting_id)
         )
         self.conn.commit()
 
@@ -141,6 +199,55 @@ class Database:
             self.conn.execute(
                 "UPDATE meetings SET status=? WHERE id=?", (new_status, meeting_id)
             )
+
+    # --- transcript segments ---
+    def replace_segments(self, meeting_id: int, segments: list[Segment]) -> None:
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM transcript_segments WHERE meeting_id=?", (meeting_id,)
+            )
+            self.conn.executemany(
+                "INSERT INTO transcript_segments(meeting_id, start, end, speaker_key, source, text) "
+                "VALUES(?,?,?,?,?,?)",
+                [
+                    (meeting_id, s.start, s.end, s.speaker_key, s.source, s.text)
+                    for s in segments
+                ],
+            )
+
+    def list_segments(self, meeting_id: int) -> list[Segment]:
+        rows = self.conn.execute(
+            "SELECT * FROM transcript_segments WHERE meeting_id=? ORDER BY start, id",
+            (meeting_id,),
+        ).fetchall()
+        return [
+            Segment(
+                id=r["id"],
+                meeting_id=r["meeting_id"],
+                start=r["start"],
+                end=r["end"],
+                speaker_key=r["speaker_key"],
+                source=r["source"],
+                text=r["text"],
+            )
+            for r in rows
+        ]
+
+    # --- speaker labels ---
+    def set_speaker_name(self, meeting_id: int, key: str, name: str) -> None:
+        self.conn.execute(
+            "INSERT INTO speaker_labels(meeting_id, speaker_key, display_name) VALUES(?,?,?) "
+            "ON CONFLICT(meeting_id, speaker_key) DO UPDATE SET display_name=excluded.display_name",
+            (meeting_id, key, name),
+        )
+        self.conn.commit()
+
+    def get_speaker_names(self, meeting_id: int) -> dict[str, str]:
+        rows = self.conn.execute(
+            "SELECT speaker_key, display_name FROM speaker_labels WHERE meeting_id=?",
+            (meeting_id,),
+        ).fetchall()
+        return {r["speaker_key"]: r["display_name"] for r in rows}
 
     # --- templates ---
     def create_template(self, t: Template) -> Template:
@@ -189,14 +296,18 @@ class Database:
         return row[0] if row else None
 
     def _row_to_meeting(self, row: sqlite3.Row) -> Meeting:
+        keys = row.keys()
         return Meeting(
             id=row["id"],
             title=row["title"],
             created_at=datetime.fromisoformat(row["created_at"]),
             audio_path=row["audio_path"],
+            loopback_path=row["loopback_path"] if "loopback_path" in keys else None,
+            mic_path=row["mic_path"] if "mic_path" in keys else None,
             rough_notes=row["rough_notes"],
             transcript=row["transcript"],
             enhanced_notes=row["enhanced_notes"],
             template_id=row["template_id"],
             status=row["status"],
+            diarized=bool(row["diarized"]) if "diarized" in keys else False,
         )
