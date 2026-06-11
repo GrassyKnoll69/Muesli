@@ -234,6 +234,11 @@ def build_router(ctx) -> APIRouter:
         ok, message = llm.validate_cloud(req.provider, key, req.model)
         return {"ok": ok, "message": message}
 
+    @router.get("/health")
+    def health():
+        from muesli_engine import health as health_mod  # noqa: PLC0415
+        return health_mod.health_payload(ctx.settings)
+
     @router.get("/ollama/models")
     def ollama_models():
         return llm.list_ollama_models(ctx.settings.ollama_host)

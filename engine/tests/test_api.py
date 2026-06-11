@@ -312,3 +312,53 @@ def test_put_settings_capture_device_round_trips(monkeypatch):
     assert body["capture_device"] == "Arctis"
     reloaded = c.get("/settings").json()
     assert reloaded["capture_device"] == "Arctis"
+
+
+# ---------------------------------------------------------------------------
+# Health endpoint
+# ---------------------------------------------------------------------------
+
+def test_health_endpoint_returns_expected_keys(monkeypatch):
+    """GET /health returns a dict with exactly the six required keys."""
+    import muesli_engine.health as health
+
+    monkeypatch.setattr(health, "check_ollama", lambda host: True)
+    monkeypatch.setattr(health, "check_webview2", lambda: True)
+    monkeypatch.setattr(health, "check_diarization_models", lambda: False)
+    monkeypatch.setattr(health, "check_whisper_model", lambda settings: False)
+    monkeypatch.setattr(health, "check_gpu", lambda: False)
+    monkeypatch.setattr(health, "check_cuda_libraries", lambda: False)
+
+    c = client()
+    data = c.get("/health").json()
+
+    assert set(data.keys()) == {
+        "ollama",
+        "webview2",
+        "diarization_models",
+        "whisper_model",
+        "gpu_present",
+        "cuda_libraries",
+    }
+
+
+def test_health_endpoint_reflects_stub_values(monkeypatch):
+    """GET /health values reflect the monkeypatched check functions."""
+    import muesli_engine.health as health
+
+    monkeypatch.setattr(health, "check_ollama", lambda host: True)
+    monkeypatch.setattr(health, "check_webview2", lambda: True)
+    monkeypatch.setattr(health, "check_diarization_models", lambda: True)
+    monkeypatch.setattr(health, "check_whisper_model", lambda settings: True)
+    monkeypatch.setattr(health, "check_gpu", lambda: False)
+    monkeypatch.setattr(health, "check_cuda_libraries", lambda: False)
+
+    c = client()
+    data = c.get("/health").json()
+
+    assert data["ollama"] is True
+    assert data["webview2"] is True
+    assert data["diarization_models"] is True
+    assert data["whisper_model"] is True
+    assert data["gpu_present"] is False
+    assert data["cuda_libraries"] is False

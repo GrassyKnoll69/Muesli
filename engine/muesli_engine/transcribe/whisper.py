@@ -34,6 +34,18 @@ def _ensure_cuda_dll_path() -> None:
             if os.path.isdir(bin_dir):
                 bin_dirs.append(bin_dir)
                 os.add_dll_directory(bin_dir)
+
+    # Also scan CUDA_DIR (populated by models_store.ensure_cuda_libraries).
+    try:
+        from muesli_engine.config import CUDA_DIR as _cuda_dir  # noqa: PLC0415
+        if _cuda_dir.exists():
+            for pkg_dir in _cuda_dir.iterdir():
+                if pkg_dir.is_dir() and any(pkg_dir.glob("*.dll")):
+                    bin_dirs.append(str(pkg_dir))
+                    os.add_dll_directory(str(pkg_dir))
+    except Exception:
+        pass
+
     if bin_dirs:
         os.environ["PATH"] = os.pathsep.join(bin_dirs) + os.pathsep + os.environ.get("PATH", "")
     _cuda_dll_dirs_added = True

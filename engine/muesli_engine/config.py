@@ -8,6 +8,8 @@ from pydantic import BaseModel
 APP_DIR = Path(os.environ.get("MUESLI_HOME", str(Path.home() / ".muesli")))
 DB_PATH = APP_DIR / "muesli.db"
 RECORDINGS_DIR = APP_DIR / "recordings"
+MODELS_DIR = APP_DIR / "models"
+CUDA_DIR = APP_DIR / "cuda"
 
 
 class Settings(BaseModel):
@@ -30,6 +32,7 @@ class Settings(BaseModel):
 def ensure_dirs() -> None:
     APP_DIR.mkdir(parents=True, exist_ok=True)
     RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def resolve_whisper_device(device: str) -> tuple[str, str]:
