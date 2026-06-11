@@ -14,17 +14,26 @@ PERSISTED_FIELDS = [
     "enhancement_backend",
     "cloud_provider",
     "cloud_model",
+    "enable_diarization",
+    "diarization_threshold",
+    "capture_device",
+    "mic_device",
 ]
 
 
 def load_settings(db: Database) -> Settings:
-    """Start from defaults and overlay any persisted non-secret values."""
-    s = Settings()
+    """Start from defaults and overlay any persisted non-secret values.
+
+    Loaded string values are coerced to their correct types by building a fresh
+    Settings via pydantic validation (pydantic v2 coerces "True"/"False"/"0"/"1"
+    → bool and "0.5" → float automatically).
+    """
+    overrides: dict = {}
     for field in PERSISTED_FIELDS:
         value = db.get_setting(field)
         if value is not None:
-            setattr(s, field, value)
-    return s
+            overrides[field] = value
+    return Settings.model_validate({**Settings().model_dump(), **overrides})
 
 
 def save_settings(db: Database, live: Settings, partial: dict) -> Settings:

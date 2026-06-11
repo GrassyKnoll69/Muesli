@@ -4,7 +4,8 @@ Muesli is a local-first, open-source AI meeting notetaker — a free alternative
 
 ## Features
 
-- **Manual recording** — start/stop system-audio capture (WASAPI loopback) from the desktop UI.
+- **Manual recording** — start/stop capture from the desktop UI, recording your **microphone** and **system audio** (WASAPI loopback) as separate time-aligned streams.
+- **Speaker diarization** — transcripts are attributed per speaker: your mic is labeled **You**, and remote participants are split into **Speaker 1/2/…** via local ONNX clustering (sherpa-onnx, no PyTorch, no cloud). Rename speakers inline; the enhanced notes and search use the attributed transcript.
 - **Template-driven AI enhancement** — choose from built-in templates (General, 1:1, Standup, Sales Call) or create your own; the LLM shapes the notes to the template.
 - **Template editor** — create, edit, duplicate, and delete templates in-app, and preview the exact prompt a template produces before using it.
 - **Searchable library** — full-text search over transcripts and enhanced notes via SQLite FTS5.
@@ -65,6 +66,33 @@ On macOS/Linux:
 ```bash
 PYTHONPATH=engine engine/.venv/bin/python run.py
 ```
+
+## Windows installer
+
+Muesli ships as a per-user Windows installer (no admin required) built with
+PyInstaller + Inno Setup. From a developer checkout with the engine venv (plus
+`pyinstaller`), Node.js, and [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+(`winget install JRSoftware.InnoSetup`) installed, build everything with one
+command:
+
+```powershell
+.\build_installer.ps1
+```
+
+This builds the UI, freezes the app, and produces
+`packaging\Output\MuesliSetup-<version>.exe`. See [`packaging/README.md`](packaging/README.md)
+for details.
+
+Notes:
+
+- **Unsigned** — Windows SmartScreen warns on first launch ("More info" →
+  "Run anyway"). Code signing is not done yet.
+- **Detected at runtime, not bundled** — on first run the app checks for the
+  **Ollama** service and the **WebView2** runtime and guides you to install them
+  if missing. The Whisper and speaker models download on first use; the optional
+  **NVIDIA CUDA** libraries can be downloaded during install (a checkbox in the
+  setup wizard) or later from the app's onboarding panel.
+- Uninstalling removes the program files but leaves your data in `~/.muesli`.
 
 ## Configuration
 

@@ -9,23 +9,27 @@ from muesli_engine.settings_store import load_settings
 
 
 class EngineContext:
-    def __init__(self, db, settings, transcribe_fn, enhance_fn, recorder_factory, open_path_fn):
+    def __init__(self, db, settings, transcribe_fn, enhance_fn, recorder_factory, open_path_fn, diarize_fn):
         self.db = db
         self.settings = settings
         self.transcribe_fn = transcribe_fn
         self.enhance_fn = enhance_fn
         self.recorder_factory = recorder_factory
         self.open_path_fn = open_path_fn
+        self.diarize_fn = diarize_fn
         self._recorders: dict[int, object] = {}
 
     def start_recording(self, meeting_id: int) -> None:
         from muesli_engine.config import RECORDINGS_DIR
 
         rec = self.recorder_factory(RECORDINGS_DIR / f"{meeting_id}.wav")
+        for attr in ("capture_device", "mic_device"):
+            if hasattr(rec, attr):
+                setattr(rec, attr, getattr(self.settings, attr, None))
         rec.start()
         self._recorders[meeting_id] = rec
 
-    def stop_recording(self, meeting_id: int) -> str:
+    def stop_recording(self, meeting_id: int) -> dict:
         rec = self._recorders.pop(meeting_id)
         return rec.stop()
 
@@ -57,6 +61,12 @@ def _default_recorder_factory(path):
     return Recorder(path)
 
 
+def _default_diarize(loopback_path, mic_path, mic_offset, settings):
+    from muesli_engine.diarize.pipeline import diarize_meeting
+
+    return diarize_meeting(loopback_path, mic_path, mic_offset, settings)
+
+
 def _default_open_path(path, select: bool = False) -> None:
     import os
     import subprocess
@@ -83,6 +93,7 @@ def create_app(
     enhance_fn=None,
     recorder_factory=_default_recorder_factory,
     open_path_fn=_default_open_path,
+    diarize_fn=_default_diarize,
 ) -> FastAPI:
     from muesli_engine.api.routes import build_router
     from muesli_engine import config
@@ -102,14 +113,21 @@ def create_app(
     if enhance_fn is None:
         enhance_fn = _make_default_enhance(settings)
 
-    ctx = EngineContext(db, settings, transcribe_fn, enhance_fn, recorder_factory, open_path_fn)
+    ctx = EngineContext(db, settings, transcribe_fn, enhance_fn, recorder_factory, open_path_fn, diarize_fn)
     app = FastAPI(title="Muesli Engine")
     app.include_router(build_router(ctx))
 
+    import sys
     from pathlib import Path
     from fastapi.staticfiles import StaticFiles
 
-    ui_dist = Path(__file__).resolve().parents[2] / "ui" / "dist"
+    # In a PyInstaller bundle the built UI is collected under sys._MEIPASS;
+    # from a source checkout it lives at <repo>/ui/dist.
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+        ui_dist = base / "ui" / "dist"
+    else:
+        ui_dist = Path(__file__).resolve().parents[2] / "ui" / "dist"
     if ui_dist.exists():
         app.mount("/", StaticFiles(directory=str(ui_dist), html=True), name="ui")
 

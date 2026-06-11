@@ -34,6 +34,18 @@ def _ensure_cuda_dll_path() -> None:
             if os.path.isdir(bin_dir):
                 bin_dirs.append(bin_dir)
                 os.add_dll_directory(bin_dir)
+
+    # Also scan CUDA_DIR (populated by models_store.ensure_cuda_libraries).
+    try:
+        from muesli_engine.config import CUDA_DIR as _cuda_dir  # noqa: PLC0415
+        if _cuda_dir.exists():
+            for pkg_dir in _cuda_dir.iterdir():
+                if pkg_dir.is_dir() and any(pkg_dir.glob("*.dll")):
+                    bin_dirs.append(str(pkg_dir))
+                    os.add_dll_directory(str(pkg_dir))
+    except Exception:
+        pass
+
     if bin_dirs:
         os.environ["PATH"] = os.pathsep.join(bin_dirs) + os.pathsep + os.environ.get("PATH", "")
     _cuda_dll_dirs_added = True
@@ -53,8 +65,33 @@ def _get_model(settings: Settings):
     return _model_cache[key]
 
 
-def transcribe_wav(path: str, settings: Settings) -> str:
-    """Transcribe a WAV file into a single plain-text transcript."""
+def transcribe_segments(path: str, settings: Settings) -> list[dict]:
+    """Transcribe a WAV file, returning one dict per segment with timing.
+
+    Args:
+        path: Path to the WAV file.  If falsy or the file does not exist,
+            returns ``[]`` without loading any model.
+        settings: Application settings used to resolve the Whisper model.
+
+    Returns:
+        ``[{"start": float, "end": float, "text": str}, ...]``, with *text*
+        stripped of leading/trailing whitespace.
+    """
+    if not path or not os.path.exists(path):
+        return []
     model = _get_model(settings)
     segments, _info = model.transcribe(path, vad_filter=True)
-    return " ".join(seg.text.strip() for seg in segments).strip()
+    return [
+        {"start": seg.start, "end": seg.end, "text": seg.text.strip()}
+        for seg in segments
+    ]
+
+
+def transcribe_wav(path: str, settings: Settings) -> str:
+    """Transcribe a WAV file into a single plain-text transcript.
+
+    Thin wrapper around :func:`transcribe_segments` that joins all segment
+    texts into one string.  Behavior for empty/missing *path* is unchanged
+    (returns ``""``).
+    """
+    return " ".join(s["text"] for s in transcribe_segments(path, settings)).strip()

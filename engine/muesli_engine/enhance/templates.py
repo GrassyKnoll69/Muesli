@@ -31,7 +31,7 @@ add accuracy. Do not invent facts that are not supported by the transcript or no
 # User's rough notes
 {rough_notes}
 
-# Transcript
+# Transcript (lines may be speaker-attributed, e.g. "You:" / "Speaker N:", use these to assign action-item owners)
 {transcript}
 
 # Output

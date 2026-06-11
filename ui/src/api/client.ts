@@ -7,7 +7,19 @@ export interface Meeting {
   enhanced_notes: string;
   template_id: number | null;
   audio_path: string | null;
+  loopback_path: string | null;
+  mic_path: string | null;
+  diarized: boolean;
   status: string;
+}
+
+export interface Segment {
+  start: number;
+  end: number;
+  speaker_key: string;
+  display_name: string;
+  source: "mic" | "loopback";
+  text: string;
 }
 
 export interface Template {
@@ -65,6 +77,15 @@ function errorMessage(value: unknown, text: string): string {
   return text;
 }
 
+export interface Health {
+  ollama: boolean;
+  webview2: boolean | null;
+  diarization_models: boolean;
+  whisper_model: boolean;
+  gpu_present: boolean;
+  cuda_libraries: boolean;
+}
+
 export interface Settings {
   whisper_model: string;
   whisper_device: string;
@@ -75,6 +96,10 @@ export interface Settings {
   cloud_provider: string | null;
   cloud_model: string | null;
   cloud_key_present: { openai: boolean; anthropic: boolean };
+  enable_diarization: boolean;
+  diarization_threshold: number;
+  capture_device: string | null;
+  mic_device: string | null;
 }
 
 async function j<T>(r: Response): Promise<T> {
@@ -112,6 +137,13 @@ export const api = {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ template_id }),
     }).then(j<Meeting>),
+  getSegments: (id: number) => fetch(`/meetings/${id}/segments`).then(j<Segment[]>),
+  renameSpeaker: (id: number, speaker_key: string, display_name: string) =>
+    fetch(`/meetings/${id}/speakers`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speaker_key, display_name }),
+    }).then(j<Segment[]>),
   listTemplates: () => fetch("/templates").then(j<Template[]>),
   getSettings: () => fetch("/settings").then(j<Settings>),
   saveSettings: (s: Partial<Settings> & { cloud_api_key?: string }) =>
@@ -125,6 +157,7 @@ export const api = {
       body: JSON.stringify({ provider, model, key }),
     }).then(j<{ ok: boolean; message: string }>),
   listOllamaModels: () => fetch("/ollama/models").then(j<string[]>),
+  listAudioDevices: () => fetch("/audio/devices").then(j<{ loopback: string[]; input: string[] }>),
   previewTemplate: (prompt: string, rough_notes?: string, transcript?: string) =>
     fetch("/templates/preview", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -143,4 +176,9 @@ export const api = {
   deleteTemplate: (id: number) =>
     fetch(`/templates/${id}`, { method: "DELETE" }).then(j<{ ok: boolean }>),
   exportUrl: (id: number) => `/meetings/${id}/export`,
+  getHealth: () => fetch("/health").then(j<Health>),
+  downloadDiarizationModels: () =>
+    fetch("/models/diarization/download", { method: "POST" }).then(j<{ ok: boolean }>),
+  downloadCudaLibraries: () =>
+    fetch("/cuda/download", { method: "POST" }).then(j<{ ok: boolean }>),
 };

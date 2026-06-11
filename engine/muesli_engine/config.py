@@ -8,6 +8,8 @@ from pydantic import BaseModel
 APP_DIR = Path(os.environ.get("MUESLI_HOME", str(Path.home() / ".muesli")))
 DB_PATH = APP_DIR / "muesli.db"
 RECORDINGS_DIR = APP_DIR / "recordings"
+MODELS_DIR = APP_DIR / "models"
+CUDA_DIR = APP_DIR / "cuda"
 
 
 class Settings(BaseModel):
@@ -20,11 +22,17 @@ class Settings(BaseModel):
     cloud_provider: str | None = None       # "openai" | "anthropic"
     cloud_model: str | None = None          # resolved to a provider default when unset
     cloud_api_key: str | None = None        # test-injection seam only; never persisted
+    enable_diarization: bool = True
+    diarization_threshold: float = 0.5
+    # Selects the loopback endpoint by name substring; blank = default output.
+    capture_device: str | None = None
+    mic_device: str | None = None
 
 
 def ensure_dirs() -> None:
     APP_DIR.mkdir(parents=True, exist_ok=True)
     RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def resolve_whisper_device(device: str) -> tuple[str, str]:

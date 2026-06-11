@@ -43,3 +43,28 @@ def test_save_ignores_unknown_fields():
     save_settings(db, live, {"bogus": "nope", "whisper_device": "cpu"})
     assert db.get_setting("bogus") is None
     assert live.whisper_device == "cpu"
+
+
+def test_diarization_fields_round_trip_with_correct_types():
+    """enable_diarization (bool) and diarization_threshold (float) persist and
+    reload with the correct Python types, even though SQLite stores strings."""
+    db = make_db()
+    live = Settings()
+    save_settings(db, live, {"enable_diarization": False, "diarization_threshold": 0.7})
+    # Raw DB values are strings.
+    assert db.get_setting("enable_diarization") == "False"
+    assert db.get_setting("diarization_threshold") == "0.7"
+    # load_settings must coerce them back to native types.
+    reloaded = load_settings(db)
+    assert reloaded.enable_diarization is False
+    assert isinstance(reloaded.enable_diarization, bool)
+    assert abs(reloaded.diarization_threshold - 0.7) < 1e-9
+    assert isinstance(reloaded.diarization_threshold, float)
+
+
+def test_mic_device_round_trips_as_string():
+    db = make_db()
+    live = Settings()
+    save_settings(db, live, {"mic_device": "Built-in Microphone"})
+    reloaded = load_settings(db)
+    assert reloaded.mic_device == "Built-in Microphone"

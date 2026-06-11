@@ -4,7 +4,9 @@ pydantic==2.*
 pywebview==5.*
 PyAudioWPatch==0.2.12.8
 faster-whisper==1.*
+numpy>=1.21        # used directly in diarize/pipeline.py (loopback resampling)
 ollama==0.3.*
 httpx==0.27.*
 keyring==25.*
 pytest==8.*
+sherpa-onnx==1.*
