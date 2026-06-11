@@ -155,7 +155,8 @@ class Database:
         )
         self.conn.commit()
 
-    def set_audio_paths(self, meeting_id: int, loopback: str, mic: str) -> None:
+    def set_audio_paths(self, meeting_id: int, loopback: str, mic: str | None = None) -> None:
+        self._update_status(meeting_id, "recorded")
         self.conn.execute(
             "UPDATE meetings SET loopback_path=?, mic_path=? WHERE id=?",
             (loopback, mic, meeting_id),

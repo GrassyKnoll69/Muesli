@@ -7,12 +7,13 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
 from muesli_engine.config import APP_DIR
-from muesli_engine.storage.models import Meeting, Template
+from muesli_engine.storage.models import Meeting, Segment, Template
 from muesli_engine import secrets
 from muesli_engine.enhance import llm
 from muesli_engine.enhance.templates import build_prompt
 from muesli_engine.export import assemble_export_markdown, export_filename
 from muesli_engine.settings_store import save_settings
+from muesli_engine.diarize.merge import attributed_transcript
 
 
 class StartRequest(BaseModel):
@@ -38,12 +39,20 @@ class SettingsUpdate(BaseModel):
     cloud_provider: str | None = None
     cloud_model: str | None = None
     cloud_api_key: str | None = None
+    enable_diarization: bool | None = None
+    diarization_threshold: float | None = None
+    mic_device: str | None = None
 
 
 class TestCloudRequest(BaseModel):
     provider: str
     model: str
     key: str | None = None
+
+
+class SpeakerRename(BaseModel):
+    speaker_key: str
+    display_name: str
 
 
 class PreviewRequest(BaseModel):
@@ -71,6 +80,9 @@ def build_router(ctx) -> APIRouter:
                 "openai": bool(secrets.get_api_key("openai")),
                 "anthropic": bool(secrets.get_api_key("anthropic")),
             },
+            "enable_diarization": s.enable_diarization,
+            "diarization_threshold": s.diarization_threshold,
+            "mic_device": s.mic_device,
         }
 
     @router.post("/recordings/start")
@@ -87,8 +99,8 @@ def build_router(ctx) -> APIRouter:
     @router.post("/recordings/{meeting_id}/stop")
     def stop(meeting_id: int):
         if ctx.recorder_factory is not None:
-            path = ctx.stop_recording(meeting_id)
-            ctx.db.set_audio_path(meeting_id, path)
+            paths = ctx.stop_recording(meeting_id)
+            ctx.db.set_audio_paths(meeting_id, paths["loopback"], paths.get("mic"))
         return ctx.db.get_meeting(meeting_id)
 
     @router.put("/meetings/{meeting_id}/notes")
@@ -99,9 +111,23 @@ def build_router(ctx) -> APIRouter:
     @router.post("/meetings/{meeting_id}/transcribe")
     def transcribe(meeting_id: int):
         meeting = ctx.db.get_meeting(meeting_id)
-        source = meeting.audio_path or ""
-        transcript = ctx.transcribe_fn(source, ctx.settings)
-        ctx.db.set_transcript(meeting_id, transcript)
+        loopback = meeting.loopback_path or meeting.audio_path
+        if ctx.settings.enable_diarization and loopback:
+            # mic_offset is not persisted per-meeting (streams start near-simultaneously;
+            # sub-100ms skew is negligible at whisper's segment granularity). Pass 0.0.
+            seg_dicts = ctx.diarize_fn(loopback, meeting.mic_path, 0.0, ctx.settings)
+            segments = [
+                Segment(meeting_id=meeting_id, start=s["start"], end=s["end"],
+                        speaker_key=s["speaker_key"], source=s["source"], text=s["text"])
+                for s in seg_dicts
+            ]
+            ctx.db.replace_segments(meeting_id, segments)
+            ctx.db.set_diarized(meeting_id, True)
+            names = ctx.db.get_speaker_names(meeting_id)
+            ctx.db.set_transcript(meeting_id, attributed_transcript(seg_dicts, names))
+        else:
+            source = meeting.audio_path or loopback or ""
+            ctx.db.set_transcript(meeting_id, ctx.transcribe_fn(source, ctx.settings))
         return ctx.db.get_meeting(meeting_id)
 
     @router.post("/meetings/{meeting_id}/enhance")
@@ -215,6 +241,37 @@ def build_router(ctx) -> APIRouter:
         notes = req.rough_notes if req.rough_notes is not None else "Sample rough notes."
         transcript = req.transcript if req.transcript is not None else "Sample transcript text."
         return {"prompt": build_prompt(req.prompt, notes, transcript)}
+
+    def _segments_payload(meeting_id: int):
+        from muesli_engine.diarize.merge import humanize_key
+        names = ctx.db.get_speaker_names(meeting_id)
+        out = []
+        for s in ctx.db.list_segments(meeting_id):
+            out.append({
+                "start": s.start,
+                "end": s.end,
+                "speaker_key": s.speaker_key,
+                "display_name": names.get(s.speaker_key, humanize_key(s.speaker_key)),
+                "source": s.source,
+                "text": s.text,
+            })
+        return out
+
+    @router.get("/meetings/{meeting_id}/segments")
+    def get_segments(meeting_id: int):
+        return _segments_payload(meeting_id)
+
+    @router.put("/meetings/{meeting_id}/speakers")
+    def rename_speaker(meeting_id: int, req: SpeakerRename):
+        ctx.db.set_speaker_name(meeting_id, req.speaker_key, req.display_name)
+        seg_dicts = [
+            {"start": s.start, "end": s.end, "speaker_key": s.speaker_key,
+             "source": s.source, "text": s.text}
+            for s in ctx.db.list_segments(meeting_id)
+        ]
+        names = ctx.db.get_speaker_names(meeting_id)
+        ctx.db.set_transcript(meeting_id, attributed_transcript(seg_dicts, names))
+        return _segments_payload(meeting_id)
 
     @router.get("/meetings/{meeting_id}/export")
     def export_meeting(meeting_id: int):

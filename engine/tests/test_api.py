@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from muesli_engine.app import create_app
+from muesli_engine.config import Settings
 import muesli_engine.secrets as secrets
 
 
@@ -12,6 +13,44 @@ def client(open_path_fn=None) -> TestClient:
         enhance_fn=lambda tprompt, notes, transcript: "## Summary\nstub enhanced",
         recorder_factory=None,
         open_path_fn=open_path_fn or (lambda path, select=False: None),
+    )
+    return TestClient(app)
+
+
+# ---------------------------------------------------------------------------
+# Diarization helpers
+# ---------------------------------------------------------------------------
+
+CANNED = [
+    {"start": 0.0, "end": 1.0, "speaker_key": "you",  "source": "mic",      "text": "Hi there."},
+    {"start": 1.0, "end": 2.0, "speaker_key": "spk1", "source": "loopback", "text": "Hello!"},
+    {"start": 2.0, "end": 3.0, "speaker_key": "spk2", "source": "loopback", "text": "Afternoon."},
+]
+
+
+class _StubRecorder:
+    """Minimal recorder stub: start is a no-op; stop returns a paths dict."""
+
+    def __init__(self, path):
+        self._path = str(path)
+
+    def start(self):
+        pass
+
+    def stop(self) -> dict:
+        return {"loopback": self._path + "-loopback.wav", "mic": None, "mic_offset": 0.0}
+
+
+def _diarize_client(settings: Settings | None = None) -> TestClient:
+    """Client wired with a stub recorder_factory and a stub diarize_fn."""
+    app = create_app(
+        db_path=":memory:",
+        transcribe_fn=lambda path, settings: "stub transcript about pricing",
+        enhance_fn=lambda tprompt, notes, transcript: "## Summary\nstub enhanced",
+        recorder_factory=_StubRecorder,
+        open_path_fn=lambda path, select=False: None,
+        diarize_fn=lambda loopback, mic, offset, s: CANNED,
+        settings=settings,
     )
     return TestClient(app)
 
@@ -131,3 +170,122 @@ def test_open_meeting_location_uses_file_explorer_hook():
     assert response.json()["ok"] is True
     assert len(opened) == 1
     assert opened[0][1] is False
+
+
+# ---------------------------------------------------------------------------
+# Diarization tests
+# ---------------------------------------------------------------------------
+
+def test_diarize_transcribe_persists_segments_and_returns_them_ordered():
+    """Start → stop → transcribe persists canned segments; GET /segments returns
+    3 items ordered by start with correct fields and human display_names."""
+    c = _diarize_client()
+    mid = c.post("/recordings/start", json={"title": "Diarized"}).json()["id"]
+    c.post(f"/recordings/{mid}/stop")
+    c.post(f"/meetings/{mid}/transcribe")
+
+    segs = c.get(f"/meetings/{mid}/segments").json()
+    assert len(segs) == 3
+    # Ordered by start
+    assert [s["start"] for s in segs] == [0.0, 1.0, 2.0]
+    # speaker_key, source, text correct
+    assert segs[0]["speaker_key"] == "you"
+    assert segs[0]["source"] == "mic"
+    assert segs[0]["text"] == "Hi there."
+    assert segs[1]["speaker_key"] == "spk1"
+    assert segs[1]["source"] == "loopback"
+    assert segs[1]["text"] == "Hello!"
+    assert segs[2]["speaker_key"] == "spk2"
+    assert segs[2]["source"] == "loopback"
+    assert segs[2]["text"] == "Afternoon."
+    # display_names humanized from keys
+    assert segs[0]["display_name"] == "You"
+    assert segs[1]["display_name"] == "Speaker 1"
+    assert segs[2]["display_name"] == "Speaker 2"
+
+
+def test_diarize_transcribe_sets_attributed_transcript_and_diarized_flag():
+    """After diarization, the meeting transcript is the attributed string and
+    diarized is True."""
+    c = _diarize_client()
+    mid = c.post("/recordings/start", json={"title": "Attributed"}).json()["id"]
+    c.post(f"/recordings/{mid}/stop")
+    meeting = c.post(f"/meetings/{mid}/transcribe").json()
+
+    expected_transcript = "You: Hi there.\nSpeaker 1: Hello!\nSpeaker 2: Afternoon."
+    assert meeting["transcript"] == expected_transcript
+    assert meeting["diarized"] is True
+
+
+def test_rename_speaker_updates_attributed_transcript_and_segments():
+    """PUT /meetings/{id}/speakers with {speaker_key, display_name} updates the
+    attributed transcript and GET /segments shows the new display_name."""
+    c = _diarize_client()
+    mid = c.post("/recordings/start", json={"title": "Rename"}).json()["id"]
+    c.post(f"/recordings/{mid}/stop")
+    c.post(f"/meetings/{mid}/transcribe")
+
+    # Rename spk1 → Alice
+    segs = c.put(f"/meetings/{mid}/speakers",
+                 json={"speaker_key": "spk1", "display_name": "Alice"}).json()
+
+    # Segments payload shows updated display_name
+    assert any(s["display_name"] == "Alice" and s["speaker_key"] == "spk1" for s in segs)
+    # spk2 still has humanized default
+    assert any(s["display_name"] == "Speaker 2" for s in segs)
+
+    # Meeting transcript now contains "Alice:"
+    meeting = c.get(f"/meetings/{mid}").json()
+    assert "Alice: Hello!" in meeting["transcript"]
+    assert "You: Hi there." in meeting["transcript"]
+    assert "Speaker 2: Afternoon." in meeting["transcript"]
+
+    # GET /segments also shows Alice
+    segs2 = c.get(f"/meetings/{mid}/segments").json()
+    alice_seg = next(s for s in segs2 if s["speaker_key"] == "spk1")
+    assert alice_seg["display_name"] == "Alice"
+
+
+def test_transcribe_flat_path_when_diarization_disabled():
+    """With enable_diarization=False, transcribe still works via the flat
+    transcribe_fn path and persists no segments."""
+    c = _diarize_client(settings=Settings(enable_diarization=False))
+    mid = c.post("/recordings/start", json={"title": "Flat"}).json()["id"]
+    # No real recorder → no audio path; just call transcribe directly
+    meeting = c.post(f"/meetings/{mid}/transcribe").json()
+
+    # Flat transcribe_fn stub used
+    assert meeting["transcript"] == "stub transcript about pricing"
+    assert meeting["diarized"] is False
+
+    # No segments stored
+    segs = c.get(f"/meetings/{mid}/segments").json()
+    assert segs == []
+
+
+def test_get_settings_includes_diarization_fields(monkeypatch):
+    """GET /settings returns the three new diarization fields."""
+    monkeypatch.setattr(secrets, "get_api_key", lambda provider: None)
+    c = client()
+    data = c.get("/settings").json()
+    assert data["enable_diarization"] is True
+    assert data["diarization_threshold"] == 0.5
+    assert data["mic_device"] is None
+
+
+def test_put_settings_diarization_fields_persist(monkeypatch):
+    """PUT /settings with enable_diarization=False and diarization_threshold=0.7
+    persists and returns the updated values."""
+    monkeypatch.setattr(secrets, "get_api_key", lambda p: None)
+    monkeypatch.setattr(secrets, "set_api_key", lambda p, k: None)
+    c = client()
+    body = c.put("/settings", json={
+        "enable_diarization": False,
+        "diarization_threshold": 0.7,
+    }).json()
+    assert body["enable_diarization"] is False
+    assert abs(body["diarization_threshold"] - 0.7) < 1e-9
+    # Confirm persisted — re-read settings
+    reloaded = c.get("/settings").json()
+    assert reloaded["enable_diarization"] is False
+    assert abs(reloaded["diarization_threshold"] - 0.7) < 1e-9

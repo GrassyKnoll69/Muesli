@@ -20,6 +20,9 @@ class Settings(BaseModel):
     cloud_provider: str | None = None       # "openai" | "anthropic"
     cloud_model: str | None = None          # resolved to a provider default when unset
     cloud_api_key: str | None = None        # test-injection seam only; never persisted
+    enable_diarization: bool = True
+    diarization_threshold: float = 0.5
+    mic_device: str | None = None
 
 
 def ensure_dirs() -> None:
