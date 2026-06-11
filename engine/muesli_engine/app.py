@@ -117,10 +117,17 @@ def create_app(
     app = FastAPI(title="Muesli Engine")
     app.include_router(build_router(ctx))
 
+    import sys
     from pathlib import Path
     from fastapi.staticfiles import StaticFiles
 
-    ui_dist = Path(__file__).resolve().parents[2] / "ui" / "dist"
+    # In a PyInstaller bundle the built UI is collected under sys._MEIPASS;
+    # from a source checkout it lives at <repo>/ui/dist.
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+        ui_dist = base / "ui" / "dist"
+    else:
+        ui_dist = Path(__file__).resolve().parents[2] / "ui" / "dist"
     if ui_dist.exists():
         app.mount("/", StaticFiles(directory=str(ui_dist), html=True), name="ui")
 
