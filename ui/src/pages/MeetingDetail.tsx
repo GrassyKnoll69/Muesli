@@ -3,7 +3,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import ErrorBanner from "../components/ErrorBanner";
 import MarkdownContent from "../components/MarkdownContent";
 import StatusChip from "../components/StatusChip";
-import { api, Meeting } from "../api/client";
+import SpeakerTranscript from "../components/SpeakerTranscript";
+import { api, Meeting, Segment } from "../api/client";
 import { canEnhanceMeeting, canTranscribeMeeting, deriveMeetingState } from "../lib/meetingState";
 
 type Tab = "enhanced" | "notes" | "transcript";
@@ -21,6 +22,7 @@ export default function MeetingDetail() {
   const mid = parseMeetingId(id);
   const nav = useNavigate();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
+  const [segments, setSegments] = useState<Segment[]>([]);
   const [tab, setTab] = useState<Tab>("enhanced");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -29,15 +31,29 @@ export default function MeetingDetail() {
   const [notesSaving, setNotesSaving] = useState(false);
   const [openingLocation, setOpeningLocation] = useState(false);
   const loadRequest = useRef(0);
+  const segmentRequest = useRef(0);
   const currentMeetingId = useRef<number | null>(mid);
   const activeAction = useRef<{ request: number; meetingId: number } | null>(null);
   const actionRequest = useRef(0);
   currentMeetingId.current = mid;
 
+  async function loadSegments(meetingId: number) {
+    const request = ++segmentRequest.current;
+    try {
+      const segs = await api.getSegments(meetingId);
+      if (segmentRequest.current === request && currentMeetingId.current === meetingId) {
+        setSegments(segs);
+      }
+    } catch {
+      // segments are best-effort; don't surface as an error
+    }
+  }
+
   async function reload() {
     const request = ++loadRequest.current;
     activeAction.current = null;
     setMeeting(null);
+    setSegments([]);
     setBusy("");
     setError("");
 
@@ -51,6 +67,9 @@ export default function MeetingDetail() {
       if (loadRequest.current === request) {
         setMeeting(nextMeeting);
         setNotesDraft(nextMeeting.rough_notes);
+        if (nextMeeting.diarized) {
+          void loadSegments(nextMeeting.id);
+        }
       }
     } catch (err) {
       if (loadRequest.current === request) {
@@ -73,6 +92,9 @@ export default function MeetingDetail() {
         setMeeting(nextMeeting);
         setNotesDraft(nextMeeting.rough_notes);
         if (nextTab) setTab(nextTab);
+        if (nextMeeting.diarized) {
+          void loadSegments(nextMeeting.id);
+        }
       }
     } catch (err) {
       if (activeAction.current?.request === request && activeAction.current.meetingId === meetingId && currentMeetingId.current === meetingId) {
@@ -144,7 +166,6 @@ export default function MeetingDetail() {
   }
 
   const state = deriveMeetingState(activeMeeting);
-  const body = tab === "notes" ? activeMeeting.rough_notes : activeMeeting.transcript;
   const canTranscribe = canTranscribeMeeting(activeMeeting);
   const canEnhance = canEnhanceMeeting(activeMeeting);
   const notesDirty = notesDraft !== activeMeeting.rough_notes;
@@ -272,8 +293,18 @@ export default function MeetingDetail() {
                 onChange={(event) => setNotesDraft(event.target.value)}
               />
             )}
-            {tab !== "enhanced" && !editingNotes && (
-              <div className="pre">{body || "Nothing here yet."}</div>
+            {tab === "notes" && !editingNotes && (
+              <div className="pre">{activeMeeting.rough_notes || "Nothing here yet."}</div>
+            )}
+            {tab === "transcript" && activeMeeting.diarized && (
+              <SpeakerTranscript
+                meetingId={activeMeeting.id}
+                segments={segments}
+                onRenamed={() => loadSegments(activeMeeting.id)}
+              />
+            )}
+            {tab === "transcript" && !activeMeeting.diarized && (
+              <div className="pre">{activeMeeting.transcript || "Nothing here yet."}</div>
             )}
           </div>
         </div>

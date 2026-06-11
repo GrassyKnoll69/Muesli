@@ -453,6 +453,62 @@ button:disabled {
   margin-bottom: 0;
 }
 
+/* Speaker transcript */
+
+.speaker-transcript {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  min-height: 280px;
+  padding: 16px;
+}
+
+.speaker-turn {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+}
+
+.speaker-chip {
+  background: currentColor;
+  border: none;
+  border-radius: 999px;
+  color: white;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  min-height: 0;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.speaker-chip:hover {
+  filter: brightness(1.15);
+  border-color: transparent;
+}
+
+.speaker-chip-input {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  min-height: 0;
+  padding: 3px 9px;
+  width: 140px;
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+.speaker-turn-text {
+  color: var(--text);
+  line-height: 1.55;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     grid-template-columns: 1fr;

@@ -12,6 +12,9 @@ function meeting(overrides: Partial<Meeting> = {}): Meeting {
     enhanced_notes: "",
     template_id: null,
     audio_path: null,
+    loopback_path: null,
+    mic_path: null,
+    diarized: false,
     status: "created",
     ...overrides,
   };

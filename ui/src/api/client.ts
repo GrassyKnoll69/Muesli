@@ -7,7 +7,19 @@ export interface Meeting {
   enhanced_notes: string;
   template_id: number | null;
   audio_path: string | null;
+  loopback_path: string | null;
+  mic_path: string | null;
+  diarized: boolean;
   status: string;
+}
+
+export interface Segment {
+  start: number;
+  end: number;
+  speaker_key: string;
+  display_name: string;
+  source: "mic" | "loopback";
+  text: string;
 }
 
 export interface Template {
@@ -75,6 +87,9 @@ export interface Settings {
   cloud_provider: string | null;
   cloud_model: string | null;
   cloud_key_present: { openai: boolean; anthropic: boolean };
+  enable_diarization: boolean;
+  diarization_threshold: number;
+  mic_device: string | null;
 }
 
 async function j<T>(r: Response): Promise<T> {
@@ -112,6 +127,13 @@ export const api = {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ template_id }),
     }).then(j<Meeting>),
+  getSegments: (id: number) => fetch(`/meetings/${id}/segments`).then(j<Segment[]>),
+  renameSpeaker: (id: number, speaker_key: string, display_name: string) =>
+    fetch(`/meetings/${id}/speakers`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speaker_key, display_name }),
+    }).then(j<Segment[]>),
   listTemplates: () => fetch("/templates").then(j<Template[]>),
   getSettings: () => fetch("/settings").then(j<Settings>),
   saveSettings: (s: Partial<Settings> & { cloud_api_key?: string }) =>

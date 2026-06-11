@@ -32,6 +32,9 @@ export default function SettingsPage() {
       enhancement_backend: s!.enhancement_backend,
       cloud_provider: s!.cloud_provider,
       cloud_model: s!.cloud_model,
+      enable_diarization: s!.enable_diarization,
+      diarization_threshold: s!.diarization_threshold,
+      mic_device: s!.mic_device,
     };
     if (key) payload.cloud_api_key = key;
     setS(await api.saveSettings(payload));
@@ -109,6 +112,47 @@ export default function SettingsPage() {
         </label>{" "}
         <button onClick={runTest}>Test connection</button>{" "}
         <span>{test}</span>
+      </div>
+
+      <h3>Transcription &amp; speakers</h3>
+      <div>
+        <label>
+          <input
+            type="checkbox"
+            checked={s.enable_diarization}
+            onChange={(e) => set("enable_diarization", e.target.checked)}
+          />{" "}
+          Split speakers (diarization)
+        </label>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <label>
+          Clustering sensitivity{" "}
+          <input
+            type="range"
+            min={0.1}
+            max={1.0}
+            step={0.05}
+            value={s.diarization_threshold}
+            onChange={(e) => set("diarization_threshold", parseFloat(e.target.value))}
+            style={{ verticalAlign: "middle" }}
+          />{" "}
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>{s.diarization_threshold.toFixed(2)}</span>
+        </label>
+        <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>
+          Lower values split speakers more readily; higher values merge more into one speaker.
+        </div>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <label>
+          Mic device{" "}
+          <input
+            value={s.mic_device ?? ""}
+            placeholder="blank = system default input"
+            onChange={(e) => set("mic_device", e.target.value || null)}
+            style={{ width: 260 }}
+          />
+        </label>
       </div>
 
       <div style={{ marginTop: 16 }}>
