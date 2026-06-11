@@ -239,6 +239,24 @@ def build_router(ctx) -> APIRouter:
         from muesli_engine import health as health_mod  # noqa: PLC0415
         return health_mod.health_payload(ctx.settings)
 
+    @router.post("/models/diarization/download")
+    def download_diarization_models():
+        from muesli_engine import models_store
+        try:
+            paths = models_store.ensure_diarization_models()
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"model download failed: {exc}")
+        return {"ok": True, **paths}
+
+    @router.post("/cuda/download")
+    def download_cuda_libraries():
+        from muesli_engine import models_store
+        try:
+            path = models_store.ensure_cuda_libraries()
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"CUDA download failed: {exc}")
+        return {"ok": True, "path": path}
+
     @router.get("/ollama/models")
     def ollama_models():
         return llm.list_ollama_models(ctx.settings.ollama_host)

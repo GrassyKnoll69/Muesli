@@ -509,6 +509,69 @@ button:disabled {
   line-height: 1.55;
 }
 
+/* Onboarding */
+
+.onboarding {
+  border-left: 3px solid var(--warning);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 20px;
+  max-width: 800px;
+  padding-left: 12px;
+}
+
+.onboarding-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.onboarding-title {
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.onboarding-card {
+  display: grid;
+  gap: 8px;
+}
+
+.onboarding-card p {
+  margin: 0;
+}
+
+.onboarding-card code {
+  background: var(--surface-muted);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.onboarding-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  min-height: 0;
+  padding: 2px 6px;
+}
+
+.onboarding-dismiss:hover {
+  color: var(--text);
+  border-color: transparent;
+}
+
+.onboarding-error {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 0;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     grid-template-columns: 1fr;

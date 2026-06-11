@@ -342,6 +342,70 @@ def test_health_endpoint_returns_expected_keys(monkeypatch):
     }
 
 
+# ---------------------------------------------------------------------------
+# Download trigger endpoints
+# ---------------------------------------------------------------------------
+
+def test_download_diarization_models_returns_ok(monkeypatch):
+    """POST /models/diarization/download returns ok=True with model paths when
+    ensure_diarization_models succeeds."""
+    import muesli_engine.models_store as ms
+    monkeypatch.setattr(
+        ms,
+        "ensure_diarization_models",
+        lambda: {"segmentation": "/models/seg.onnx", "embedding": "/models/emb.onnx"},
+    )
+    c = client()
+    r = c.post("/models/diarization/download")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["segmentation"] == "/models/seg.onnx"
+    assert data["embedding"] == "/models/emb.onnx"
+
+
+def test_download_diarization_models_returns_500_on_error(monkeypatch):
+    """POST /models/diarization/download returns 500 when ensure_diarization_models
+    raises an exception."""
+    import muesli_engine.models_store as ms
+    monkeypatch.setattr(
+        ms,
+        "ensure_diarization_models",
+        lambda: (_ for _ in ()).throw(RuntimeError("network error")),
+    )
+    c = client()
+    r = c.post("/models/diarization/download")
+    assert r.status_code == 500
+    assert "model download failed" in r.json()["detail"]
+
+
+def test_download_cuda_libraries_returns_ok(monkeypatch):
+    """POST /cuda/download returns ok=True with path when ensure_cuda_libraries
+    succeeds."""
+    import muesli_engine.models_store as ms
+    monkeypatch.setattr(ms, "ensure_cuda_libraries", lambda: "/cuda/libs")
+    c = client()
+    r = c.post("/cuda/download")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["path"] == "/cuda/libs"
+
+
+def test_download_cuda_libraries_returns_500_on_error(monkeypatch):
+    """POST /cuda/download returns 500 when ensure_cuda_libraries raises."""
+    import muesli_engine.models_store as ms
+    monkeypatch.setattr(
+        ms,
+        "ensure_cuda_libraries",
+        lambda: (_ for _ in ()).throw(RuntimeError("disk full")),
+    )
+    c = client()
+    r = c.post("/cuda/download")
+    assert r.status_code == 500
+    assert "CUDA download failed" in r.json()["detail"]
+
+
 def test_health_endpoint_reflects_stub_values(monkeypatch):
     """GET /health values reflect the monkeypatched check functions."""
     import muesli_engine.health as health

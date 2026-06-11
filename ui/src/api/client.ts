@@ -77,6 +77,15 @@ function errorMessage(value: unknown, text: string): string {
   return text;
 }
 
+export interface Health {
+  ollama: boolean;
+  webview2: boolean | null;
+  diarization_models: boolean;
+  whisper_model: boolean;
+  gpu_present: boolean;
+  cuda_libraries: boolean;
+}
+
 export interface Settings {
   whisper_model: string;
   whisper_device: string;
@@ -167,4 +176,9 @@ export const api = {
   deleteTemplate: (id: number) =>
     fetch(`/templates/${id}`, { method: "DELETE" }).then(j<{ ok: boolean }>),
   exportUrl: (id: number) => `/meetings/${id}/export`,
+  getHealth: () => fetch("/health").then(j<Health>),
+  downloadDiarizationModels: () =>
+    fetch("/models/diarization/download", { method: "POST" }).then(j<{ ok: boolean }>),
+  downloadCudaLibraries: () =>
+    fetch("/cuda/download", { method: "POST" }).then(j<{ ok: boolean }>),
 };

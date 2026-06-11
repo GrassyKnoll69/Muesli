@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
 import ActiveMeeting from "./pages/ActiveMeeting";
 import Library from "./pages/Library";
 import MeetingDetail from "./pages/MeetingDetail";
 import Templates from "./pages/Templates";
 import SettingsPage from "./pages/Settings";
+import Onboarding from "./components/Onboarding";
+import { api, Health } from "./api/client";
 
 function navClass({ isActive }: { isActive: boolean }) {
   return `nav-link${isActive ? " active" : ""}`;
@@ -16,10 +18,20 @@ export default function App() {
     return saved === "dark" ? "dark" : "light";
   });
 
+  const [health, setHealth] = useState<Health | null>(null);
+
+  const refreshHealth = useCallback(() => {
+    api.getHealth().then(setHealth).catch(() => setHealth(null));
+  }, []);
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("muesli-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    refreshHealth();
+  }, [refreshHealth]);
 
   return (
     <BrowserRouter>
@@ -48,6 +60,7 @@ export default function App() {
           </nav>
         </aside>
         <main className="main">
+          <Onboarding health={health} onRefresh={refreshHealth} />
           <Routes>
             <Route path="/" element={<Library />} />
             <Route path="/new" element={<ActiveMeeting />} />
