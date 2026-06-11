@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-import threading
+import os
 import time
 import wave
 from pathlib import Path
@@ -27,15 +27,34 @@ def _derive_paths(out_path: str | Path) -> tuple[str, str]:
 
 
 class Recorder:
-    """Records WASAPI loopback (system audio) and default mic to separate WAV files.
+    """Records WASAPI loopback (system audio) and the mic to separate WAV files.
 
     Captures two concurrent streams:
-    - Loopback: what plays through the default output device (remote participants).
-    - Mic: default WASAPI input device (local speaker).
 
-    Each stream runs its own thread and frame buffer. If no mic device is
-    available, or opening the mic stream fails, the recorder degrades gracefully
-    to loopback-only and ``stop()`` returns ``mic=None``.
+    - **Loopback** — what plays through the chosen output device (every remote
+      participant, mixed).
+    - **Mic** — the chosen input device (the local user).
+
+    Uses PortAudio **callback mode** for both streams: PortAudio drives its own
+    audio thread and hands us each buffer via a callback. This avoids a manual
+    read loop, whose blocking ``stream.read()`` either hangs on ``stop`` (when
+    no audio is playing) or crashes natively if the stream is closed mid-read
+    from another thread. ``stop_stream``/``close`` are thread-safe in callback
+    mode, so ``stop()`` returns promptly.
+
+    Device selection (both optional) chooses the capture endpoints by
+    case-insensitive name substring:
+
+    - ``capture_device`` selects the loopback endpoint. Falls back to the
+      ``MUESLI_CAPTURE_DEVICE`` environment variable, then to the default
+      output. Useful when the default output is a virtual device (e.g.
+      SteelSeries Sonar / VoiceMeeter) that splits audio into multiple streams;
+      capturing the physical endpoint records everything the user hears.
+    - ``mic_device`` selects the input endpoint. Falls back to the default
+      WASAPI input device.
+
+    If no mic device is available, or opening the mic stream fails, the recorder
+    degrades gracefully to loopback-only and ``stop()`` returns ``mic=None``.
 
     ``stop()`` returns::
 
@@ -46,30 +65,33 @@ class Recorder:
         }
     """
 
-    def __init__(self, out_path: str | Path):
+    def __init__(
+        self,
+        out_path: str | Path,
+        capture_device: str | None = None,
+        mic_device: str | None = None,
+    ):
         self.out_path = str(out_path)
         self._loopback_path, self._mic_path = _derive_paths(out_path)
+        self.capture_device = capture_device
+        self.mic_device = mic_device
 
         self._pa = pyaudio.PyAudio()
 
         # --- loopback state ---
         self._lb_frames: list[bytes] = []
         self._lb_stream = None
-        self._lb_thread: threading.Thread | None = None
         self._lb_channels: int = 2
         self._lb_rate: int = 48000
-        self._loopback_t0: float = 0.0
+        self._lb_t0: float | None = None
 
         # --- mic state ---
         self._mic_frames: list[bytes] = []
         self._mic_stream = None
-        self._mic_thread: threading.Thread | None = None
         self._mic_channels: int = 1
         self._mic_rate: int = 16000
-        self._mic_t0: float = 0.0
+        self._mic_t0: float | None = None
         self._mic_available: bool = False
-
-        self._running = False
 
     # ------------------------------------------------------------------
     # Device discovery
@@ -77,6 +99,21 @@ class Recorder:
 
     def _loopback_device(self) -> dict:
         wasapi = self._pa.get_host_api_info_by_type(pyaudio.paWASAPI)
+
+        # Explicit override (Settings value, else env var): capture the loopback
+        # whose name contains this substring.
+        preferred = (
+            self.capture_device or os.environ.get("MUESLI_CAPTURE_DEVICE", "")
+        ).strip()
+        if preferred:
+            for i in range(self._pa.get_device_count()):
+                dev = self._pa.get_device_info_by_index(i)
+                if dev.get("isLoopbackDevice") and preferred.lower() in dev["name"].lower():
+                    return dev
+            raise RuntimeError(
+                f"No WASAPI loopback device matches capture device {preferred!r}."
+            )
+
         default_out = self._pa.get_device_info_by_index(wasapi["defaultOutputDevice"])
         for i in range(self._pa.get_device_count()):
             dev = self._pa.get_device_info_by_index(i)
@@ -84,41 +121,48 @@ class Recorder:
                 return dev
         raise RuntimeError("No WASAPI loopback device found for the default output.")
 
-    def _mic_device(self) -> dict:
+    def _input_device(self) -> dict:
         wasapi = self._pa.get_host_api_info_by_type(pyaudio.paWASAPI)
+
+        preferred = (self.mic_device or "").strip()
+        if preferred:
+            for i in range(self._pa.get_device_count()):
+                dev = self._pa.get_device_info_by_index(i)
+                if (
+                    not dev.get("isLoopbackDevice")
+                    and int(dev.get("maxInputChannels", 0)) > 0
+                    and preferred.lower() in dev["name"].lower()
+                ):
+                    return dev
+            raise RuntimeError(f"No WASAPI input device matches mic device {preferred!r}.")
+
         default_in_idx = wasapi.get("defaultInputDevice", -1)
-        if default_in_idx < 0:
+        if default_in_idx is None or int(default_in_idx) < 0:
             raise RuntimeError("No default WASAPI input device.")
         return self._pa.get_device_info_by_index(int(default_in_idx))
 
     # ------------------------------------------------------------------
-    # Read loops (one per stream)
+    # Callbacks (PortAudio drives its own thread; we just buffer)
     # ------------------------------------------------------------------
 
-    def _loopback_loop(self) -> None:
-        first = True
-        while self._running:
-            data = self._lb_stream.read(_CHUNK, exception_on_overflow=False)
-            if first:
-                self._loopback_t0 = time.monotonic()
-                first = False
-            self._lb_frames.append(data)
+    def _loopback_callback(self, in_data, frame_count, time_info, status):
+        if self._lb_t0 is None:
+            self._lb_t0 = time.monotonic()
+        self._lb_frames.append(in_data)
+        return (None, pyaudio.paContinue)
 
-    def _mic_loop(self) -> None:
-        first = True
-        while self._running:
-            data = self._mic_stream.read(_CHUNK, exception_on_overflow=False)
-            if first:
-                self._mic_t0 = time.monotonic()
-                first = False
-            self._mic_frames.append(data)
+    def _mic_callback(self, in_data, frame_count, time_info, status):
+        if self._mic_t0 is None:
+            self._mic_t0 = time.monotonic()
+        self._mic_frames.append(in_data)
+        return (None, pyaudio.paContinue)
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        # --- loopback ---
+        # --- loopback (required) ---
         lb_dev = self._loopback_device()
         self._lb_channels = int(lb_dev["maxInputChannels"]) or 2
         self._lb_rate = int(lb_dev["defaultSampleRate"])
@@ -129,11 +173,12 @@ class Recorder:
             frames_per_buffer=_CHUNK,
             input=True,
             input_device_index=lb_dev["index"],
+            stream_callback=self._loopback_callback,
         )
 
         # --- mic (optional; degrade gracefully on failure) ---
         try:
-            mic_dev = self._mic_device()
+            mic_dev = self._input_device()
             self._mic_channels = int(mic_dev["maxInputChannels"]) or 1
             self._mic_rate = int(mic_dev["defaultSampleRate"])
             self._mic_stream = self._pa.open(
@@ -143,46 +188,36 @@ class Recorder:
                 frames_per_buffer=_CHUNK,
                 input=True,
                 input_device_index=mic_dev["index"],
+                stream_callback=self._mic_callback,
             )
             self._mic_available = True
         except Exception as exc:  # noqa: BLE001
             _log.warning("Mic stream unavailable; recording loopback only. (%s)", exc)
             self._mic_available = False
 
-        self._running = True
-
-        self._lb_thread = threading.Thread(target=self._loopback_loop, daemon=True)
-        self._lb_thread.start()
-
-        if self._mic_available:
-            self._mic_thread = threading.Thread(target=self._mic_loop, daemon=True)
-            self._mic_thread.start()
-
     def stop(self) -> dict:
-        self._running = False
+        # Closing in callback mode is the supported, thread-safe path.
+        for stream in (self._lb_stream, self._mic_stream):
+            if stream is not None:
+                try:
+                    stream.stop_stream()
+                except Exception:
+                    pass
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+        self._lb_stream = None
+        self._mic_stream = None
 
-        # Join loopback thread
-        if self._lb_thread:
-            self._lb_thread.join()
-        if self._lb_stream:
-            self._lb_stream.stop_stream()
-            self._lb_stream.close()
-
-        # Join mic thread
-        if self._mic_thread:
-            self._mic_thread.join()
-        if self._mic_stream:
-            self._mic_stream.stop_stream()
-            self._mic_stream.close()
-
-        # Write loopback WAV
+        # Write loopback WAV.
         with wave.open(self._loopback_path, "wb") as wf:
             wf.setnchannels(self._lb_channels)
             wf.setsampwidth(self._pa.get_sample_size(pyaudio.paInt16))
             wf.setframerate(self._lb_rate)
             wf.writeframes(b"".join(self._lb_frames))
 
-        # Write mic WAV (only if we captured mic frames)
+        # Write mic WAV (only if we actually captured mic frames).
         mic_out: str | None = None
         if self._mic_available and self._mic_frames:
             with wave.open(self._mic_path, "wb") as wf:
@@ -192,10 +227,17 @@ class Recorder:
                 wf.writeframes(b"".join(self._mic_frames))
             mic_out = self._mic_path
 
-        # Compute offset (seconds; positive = mic started later than loopback)
-        mic_offset = (self._mic_t0 - self._loopback_t0) if mic_out is not None else 0.0
+        # Offset (seconds; positive = mic's first buffer arrived later than
+        # loopback's). 0.0 when we have no mic or never received both streams.
+        if mic_out is not None and self._mic_t0 is not None and self._lb_t0 is not None:
+            mic_offset = self._mic_t0 - self._lb_t0
+        else:
+            mic_offset = 0.0
 
-        self._pa.terminate()
+        try:
+            self._pa.terminate()
+        except Exception:
+            pass
 
         return {
             "loopback": self._loopback_path,
