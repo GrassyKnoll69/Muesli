@@ -55,6 +55,31 @@ def _diarize_client(settings: Settings | None = None) -> TestClient:
     return TestClient(app)
 
 
+def test_transcribe_falls_back_to_flat_when_diarization_fails():
+    """Diarization is on by default but the models download lazily; a failing
+    diarize_fn must fall back to a flat transcript, not 500 the request."""
+    def boom(loopback, mic, offset, s):
+        raise RuntimeError("diarization models not downloaded")
+
+    app = create_app(
+        db_path=":memory:",
+        transcribe_fn=lambda path, settings: "flat fallback transcript",
+        enhance_fn=lambda tprompt, notes, transcript: "## Summary\nstub",
+        recorder_factory=_StubRecorder,
+        open_path_fn=lambda path, select=False: None,
+        diarize_fn=boom,
+    )
+    c = TestClient(app)
+    mid = c.post("/recordings/start", json={"title": "Fallback"}).json()["id"]
+    c.post(f"/recordings/{mid}/stop")
+    r = c.post(f"/meetings/{mid}/transcribe")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["transcript"] == "flat fallback transcript"
+    assert body["diarized"] is False
+    assert c.get(f"/meetings/{mid}/segments").json() == []
+
+
 def test_templates_seeded_on_startup():
     c = client()
     names = {t["name"] for t in c.get("/templates").json()}

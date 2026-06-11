@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from muesli_engine.enhance.templates import build_prompt
 from muesli_engine.export import assemble_export_markdown, export_filename
 from muesli_engine.settings_store import save_settings
 from muesli_engine.diarize.merge import attributed_transcript
+
+_log = logging.getLogger(__name__)
 
 
 class StartRequest(BaseModel):
@@ -115,21 +118,31 @@ def build_router(ctx) -> APIRouter:
         meeting = ctx.db.get_meeting(meeting_id)
         loopback = meeting.loopback_path or meeting.audio_path
         if ctx.settings.enable_diarization and loopback:
-            # mic_offset is not persisted per-meeting (streams start near-simultaneously;
-            # sub-100ms skew is negligible at whisper's segment granularity). Pass 0.0.
-            seg_dicts = ctx.diarize_fn(loopback, meeting.mic_path, 0.0, ctx.settings)
-            segments = [
-                Segment(meeting_id=meeting_id, start=s["start"], end=s["end"],
-                        speaker_key=s["speaker_key"], source=s["source"], text=s["text"])
-                for s in seg_dicts
-            ]
-            ctx.db.replace_segments(meeting_id, segments)
-            ctx.db.set_diarized(meeting_id, True)
-            names = ctx.db.get_speaker_names(meeting_id)
-            ctx.db.set_transcript(meeting_id, attributed_transcript(seg_dicts, names))
-        else:
-            source = meeting.audio_path or loopback or ""
-            ctx.db.set_transcript(meeting_id, ctx.transcribe_fn(source, ctx.settings))
+            try:
+                # mic_offset is not persisted per-meeting (streams start near-
+                # simultaneously; sub-100ms skew is negligible at whisper's segment
+                # granularity). Pass 0.0.
+                seg_dicts = ctx.diarize_fn(loopback, meeting.mic_path, 0.0, ctx.settings)
+                segments = [
+                    Segment(meeting_id=meeting_id, start=s["start"], end=s["end"],
+                            speaker_key=s["speaker_key"], source=s["source"], text=s["text"])
+                    for s in seg_dicts
+                ]
+                ctx.db.replace_segments(meeting_id, segments)
+                ctx.db.set_diarized(meeting_id, True)
+                names = ctx.db.get_speaker_names(meeting_id)
+                ctx.db.set_transcript(meeting_id, attributed_transcript(seg_dicts, names))
+                return ctx.db.get_meeting(meeting_id)
+            except Exception:
+                # Diarization is on by default and the models download lazily, so a
+                # first-run transcribe (or a corrupt stream) must not hard-fail.
+                # Fall back to a flat transcript rather than 500-ing the request.
+                _log.warning(
+                    "Diarization failed for meeting %s; falling back to flat transcript.",
+                    meeting_id, exc_info=True,
+                )
+        source = meeting.audio_path or loopback or ""
+        ctx.db.set_transcript(meeting_id, ctx.transcribe_fn(source, ctx.settings))
         return ctx.db.get_meeting(meeting_id)
 
     @router.post("/meetings/{meeting_id}/enhance")
@@ -213,7 +226,9 @@ def build_router(ctx) -> APIRouter:
 
     @router.put("/settings")
     def update_settings(req: SettingsUpdate):
-        partial = {k: v for k, v in req.model_dump().items() if v is not None}
+        # exclude_unset distinguishes "field omitted" from "explicitly set to null",
+        # so the UI can clear a device/provider back to default (saved as "").
+        partial = req.model_dump(exclude_unset=True)
         key = partial.pop("cloud_api_key", None)
         save_settings(ctx.db, ctx.settings, partial)
         if key is not None:
