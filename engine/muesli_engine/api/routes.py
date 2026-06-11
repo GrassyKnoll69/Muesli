@@ -41,6 +41,7 @@ class SettingsUpdate(BaseModel):
     cloud_api_key: str | None = None
     enable_diarization: bool | None = None
     diarization_threshold: float | None = None
+    capture_device: str | None = None
     mic_device: str | None = None
 
 
@@ -82,6 +83,7 @@ def build_router(ctx) -> APIRouter:
             },
             "enable_diarization": s.enable_diarization,
             "diarization_threshold": s.diarization_threshold,
+            "capture_device": s.capture_device,
             "mic_device": s.mic_device,
         }
 
@@ -235,6 +237,11 @@ def build_router(ctx) -> APIRouter:
     @router.get("/ollama/models")
     def ollama_models():
         return llm.list_ollama_models(ctx.settings.ollama_host)
+
+    @router.get("/audio/devices")
+    def audio_devices():
+        from muesli_engine.audio.capture import list_devices
+        return list_devices()
 
     @router.post("/templates/preview")
     def preview_template(req: PreviewRequest):

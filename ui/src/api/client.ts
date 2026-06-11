@@ -89,6 +89,7 @@ export interface Settings {
   cloud_key_present: { openai: boolean; anthropic: boolean };
   enable_diarization: boolean;
   diarization_threshold: number;
+  capture_device: string | null;
   mic_device: string | null;
 }
 
@@ -147,6 +148,7 @@ export const api = {
       body: JSON.stringify({ provider, model, key }),
     }).then(j<{ ok: boolean; message: string }>),
   listOllamaModels: () => fetch("/ollama/models").then(j<string[]>),
+  listAudioDevices: () => fetch("/audio/devices").then(j<{ loopback: string[]; input: string[] }>),
   previewTemplate: (prompt: string, rough_notes?: string, transcript?: string) =>
     fetch("/templates/preview", {
       method: "POST", headers: { "Content-Type": "application/json" },

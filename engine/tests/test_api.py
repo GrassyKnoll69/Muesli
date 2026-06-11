@@ -289,3 +289,26 @@ def test_put_settings_diarization_fields_persist(monkeypatch):
     reloaded = c.get("/settings").json()
     assert reloaded["enable_diarization"] is False
     assert abs(reloaded["diarization_threshold"] - 0.7) < 1e-9
+
+
+def test_audio_devices_endpoint_returns_correct_shape(monkeypatch):
+    """GET /audio/devices returns a dict with list-typed 'loopback' and 'input' keys."""
+    from muesli_engine.audio import capture
+    monkeypatch.setattr(capture, "list_devices", lambda: {"loopback": ["Speaker A [Loopback]"], "input": ["Mic B"]})
+    c = client()
+    data = c.get("/audio/devices").json()
+    assert "loopback" in data
+    assert "input" in data
+    assert isinstance(data["loopback"], list)
+    assert isinstance(data["input"], list)
+
+
+def test_put_settings_capture_device_round_trips(monkeypatch):
+    """PUT capture_device='Arctis' then GET shows capture_device == 'Arctis'."""
+    monkeypatch.setattr(secrets, "get_api_key", lambda p: None)
+    monkeypatch.setattr(secrets, "set_api_key", lambda p, k: None)
+    c = client()
+    body = c.put("/settings", json={"capture_device": "Arctis"}).json()
+    assert body["capture_device"] == "Arctis"
+    reloaded = c.get("/settings").json()
+    assert reloaded["capture_device"] == "Arctis"

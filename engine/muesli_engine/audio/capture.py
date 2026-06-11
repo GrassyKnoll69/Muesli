@@ -12,6 +12,42 @@ _CHUNK = 1024
 _log = logging.getLogger(__name__)
 
 
+def list_devices() -> dict[str, list[str]]:
+    """Enumerate selectable WASAPI capture endpoints by display name.
+
+    Returns ``{"loopback": [...], "input": [...]}`` (deduped, preserving order).
+    Degrades to empty lists on any failure (e.g. no audio subsystem) — never
+    raises, so the API endpoint is safe to call anywhere.
+    """
+    loopback: list[str] = []
+    input_: list[str] = []
+    loopback_seen: set[str] = set()
+    input_seen: set[str] = set()
+    pa = None
+    try:
+        pa = pyaudio.PyAudio()
+        for i in range(pa.get_device_count()):
+            dev = pa.get_device_info_by_index(i)
+            name: str = dev["name"]
+            if dev.get("isLoopbackDevice"):
+                if name not in loopback_seen:
+                    loopback.append(name)
+                    loopback_seen.add(name)
+            elif int(dev.get("maxInputChannels", 0)) > 0:
+                if name not in input_seen:
+                    input_.append(name)
+                    input_seen.add(name)
+    except Exception:
+        return {"loopback": [], "input": []}
+    finally:
+        if pa is not None:
+            try:
+                pa.terminate()
+            except Exception:
+                pass
+    return {"loopback": loopback, "input": input_}
+
+
 def _derive_paths(out_path: str | Path) -> tuple[str, str]:
     """Derive sibling loopback/mic paths from a single base WAV path.
 

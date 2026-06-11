@@ -22,6 +22,8 @@ class Settings(BaseModel):
     cloud_api_key: str | None = None        # test-injection seam only; never persisted
     enable_diarization: bool = True
     diarization_threshold: float = 0.5
+    # Selects the loopback endpoint by name substring; blank = default output.
+    capture_device: str | None = None
     mic_device: str | None = None
 
 

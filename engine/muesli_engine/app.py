@@ -23,6 +23,9 @@ class EngineContext:
         from muesli_engine.config import RECORDINGS_DIR
 
         rec = self.recorder_factory(RECORDINGS_DIR / f"{meeting_id}.wav")
+        for attr in ("capture_device", "mic_device"):
+            if hasattr(rec, attr):
+                setattr(rec, attr, getattr(self.settings, attr, None))
         rec.start()
         self._recorders[meeting_id] = rec
 

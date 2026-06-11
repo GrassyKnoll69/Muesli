@@ -11,6 +11,7 @@ const CLOUD_MODELS: Record<string, string[]> = {
 export default function SettingsPage() {
   const [s, setS] = useState<S | null>(null);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [devices, setDevices] = useState<{ loopback: string[]; input: string[] }>({ loopback: [], input: [] });
   const [key, setKey] = useState("");
   const [test, setTest] = useState("");
   const [saved, setSaved] = useState("");
@@ -18,6 +19,7 @@ export default function SettingsPage() {
   useEffect(() => {
     api.getSettings().then(setS);
     api.listOllamaModels().then(setOllamaModels).catch(() => setOllamaModels([]));
+    api.listAudioDevices().then(setDevices).catch(() => setDevices({ loopback: [], input: [] }));
   }, []);
   if (!s) return <p>Loading…</p>;
 
@@ -34,6 +36,7 @@ export default function SettingsPage() {
       cloud_model: s!.cloud_model,
       enable_diarization: s!.enable_diarization,
       diarization_threshold: s!.diarization_threshold,
+      capture_device: s!.capture_device,
       mic_device: s!.mic_device,
     };
     if (key) payload.cloud_api_key = key;
@@ -145,13 +148,32 @@ export default function SettingsPage() {
       </div>
       <div style={{ marginTop: 8 }}>
         <label>
+          Capture device (system audio){" "}
+          <input
+            list="capture-devices"
+            value={s.capture_device ?? ""}
+            placeholder="blank = default output"
+            onChange={(e) => set("capture_device", e.target.value || null)}
+            style={{ width: 260 }}
+          />
+          <datalist id="capture-devices">
+            {devices.loopback.map((d) => <option key={d} value={d} />)}
+          </datalist>
+        </label>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <label>
           Mic device{" "}
           <input
+            list="mic-devices"
             value={s.mic_device ?? ""}
-            placeholder="blank = system default input"
+            placeholder="blank = default input"
             onChange={(e) => set("mic_device", e.target.value || null)}
             style={{ width: 260 }}
           />
+          <datalist id="mic-devices">
+            {devices.input.map((d) => <option key={d} value={d} />)}
+          </datalist>
         </label>
       </div>
 

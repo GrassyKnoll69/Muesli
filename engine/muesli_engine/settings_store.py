@@ -16,6 +16,7 @@ PERSISTED_FIELDS = [
     "cloud_model",
     "enable_diarization",
     "diarization_threshold",
+    "capture_device",
     "mic_device",
 ]
 
